@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snaglist Pro</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="topbar">
+                <a href="/history" class="history-link">Job History</a>
+                <a href="/logout" class="logout-link">Logout</a>
+            </div>
+            <h1>Snaglist Pro</h1>
+            <p class="subtitle">WhatsApp Chat ZIP → Excel Snaglist</p>
+        </header>
+
+        <main>
+            <form id="uploadForm" class="upload-form">
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-content">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <p class="drop-text">Drag & drop WhatsApp ZIP here</p>
+                        <p class="drop-hint">or click to browse</p>
+                        <input type="file" id="zipInput" name="zip" accept=".zip" hidden>
+                    </div>
+                    <div class="file-info" id="zipInfo" style="display:none;">
+                        <span id="zipFileName"></span>
+                        <button type="button" class="remove-file" id="removeZip">&times;</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="checklistInput">Checklist (optional)</label>
+                    <div class="checklist-input-wrapper">
+                        <input type="file" id="checklistInput" name="checklist" accept=".xlsx,.xls" hidden>
+                        <button type="button" class="btn-secondary" id="checklistBtn">Choose Checklist</button>
+                        <span class="file-name" id="checklistName">None selected</span>
+                        <button type="button" class="remove-file" id="removeChecklist" style="display:none;">&times;</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="projectName">Project Name (optional)</label>
+                    <input type="text" id="projectName" name="project" placeholder="e.g. Subramanya Arcade T1">
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="aiToggle">
+                        <span>Enable AI matching (slower but smarter)</span>
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="fastModeToggle" checked>
+                        <span>Fast mode (skip visual dedup & Google Sheets export)</span>
+                    </label>
+                </div>
+
+                <button type="submit" class="btn-primary" id="submitBtn" disabled>
+                    <span class="btn-text">Generate Snaglist</span>
+                    <span class="spinner" id="btnSpinner" style="display:none;"></span>
+                </button>
+            </form>
+
+            <div class="status-card" id="statusCard" style="display:none;">
+                <div class="status-header">
+                    <h3>Processing</h3>
+                    <span class="status-badge processing" id="statusBadge">Processing</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <p class="status-message" id="statusMessage">Uploading files...</p>
+                <div class="status-actions" id="statusActions" style="display:none;">
+                    <a href="#" class="btn-primary" id="downloadBtn">Download Excel</a>
+                    <button type="button" class="btn-secondary" id="newJobBtn">New Job</button>
+                </div>
+                <div class="status-actions" id="cancelActions">
+                    <button type="button" class="btn-secondary danger" id="cancelBtn">Cancel</button>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Snaglist Pro — Local processing, no cloud uploads</p>
+        </footer>
+        <div class="ui-watermark">Developed by Vineeth.Bisa</div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const zipInput = document.getElementById('zipInput');
+        const zipInfo = document.getElementById('zipInfo');
+        const zipFileName = document.getElementById('zipFileName');
+        const removeZip = document.getElementById('removeZip');
+        const checklistInput = document.getElementById('checklistInput');
+        const checklistBtn = document.getElementById('checklistBtn');
+        const checklistName = document.getElementById('checklistName');
+        const removeChecklist = document.getElementById('removeChecklist');
+        const uploadForm = document.getElementById('uploadForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const btnSpinner = document.getElementById('btnSpinner');
+        const btnText = document.querySelector('.btn-text');
+        const statusCard = document.getElementById('statusCard');
+        const statusBadge = document.getElementById('statusBadge');
+        const progressFill = document.getElementById('progressFill');
+        const statusMessage = document.getElementById('statusMessage');
+        const statusActions = document.getElementById('statusActions');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const newJobBtn = document.getElementById('newJobBtn');
+
+        let selectedZip = null;
+        let selectedChecklist = null;
+        let currentJobId = null;
+        let pollInterval = null;
+
+        dropZone.addEventListener('click', () => zipInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].name.endsWith('.zip')) {
+                selectZip(files[0]);
+            }
+        });
+        zipInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) selectZip(e.target.files[0]);
+        });
+        removeZip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectedZip = null;
+            zipInput.value = '';
+            zipInfo.style.display = 'none';
+            dropZone.querySelector('.drop-zone-content').style.display = 'flex';
+            updateSubmitBtn();
+        });
+
+        checklistBtn.addEventListener('click', () => checklistInput.click());
+        checklistInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) selectChecklist(e.target.files[0]);
+        });
+        removeChecklist.addEventListener('click', () => {
+            selectedChecklist = null;
+            checklistInput.value = '';
+            checklistName.textContent = 'None selected';
+            removeChecklist.style.display = 'none';
+        });
+
+        function selectZip(file) {
+            selectedZip = file;
+            zipFileName.textContent = file.name;
+            zipInfo.style.display = 'flex';
+            dropZone.querySelector('.drop-zone-content').style.display = 'none';
+            updateSubmitBtn();
+        }
+
+        function selectChecklist(file) {
+            selectedChecklist = file;
+            checklistName.textContent = file.name;
+            removeChecklist.style.display = 'inline';
+        }
+
+        function updateSubmitBtn() {
+            submitBtn.disabled = !selectedZip;
+        }
+
+        const aiToggle = document.getElementById('aiToggle');
+        const fastModeToggle = document.getElementById('fastModeToggle');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const cancelActions = document.getElementById('cancelActions');
+
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!selectedZip) return;
+
+            const formData = new FormData();
+            formData.append('zip', selectedZip);
+            if (selectedChecklist) formData.append('checklist', selectedChecklist);
+            const project = document.getElementById('projectName').value.trim();
+            if (project) formData.append('project', project);
+            formData.append('ai_enabled', aiToggle.checked ? '1' : '0');
+            formData.append('fast_mode', fastModeToggle.checked ? '1' : '0');
+
+            submitBtn.disabled = true;
+            btnText.textContent = 'Starting...';
+            btnSpinner.style.display = 'inline-block';
+
+            try {
+                const resp = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Upload failed');
+                currentJobId = data.job_id;
+                showStatus();
+                pollStatus();
+            } catch (err) {
+                alert('Error: ' + err.message);
+                submitBtn.disabled = false;
+                btnText.textContent = 'Generate Snaglist';
+                btnSpinner.style.display = 'none';
+            }
+        });
+
+        function showStatus() {
+            statusCard.style.display = 'block';
+            statusBadge.className = 'status-badge processing';
+            statusBadge.textContent = 'Processing';
+            progressFill.style.width = '0%';
+            statusMessage.textContent = 'Uploading and processing...';
+            statusActions.style.display = 'none';
+            cancelActions.style.display = 'flex';
+        }
+
+        cancelBtn.addEventListener('click', async () => {
+            if (!currentJobId) return;
+            try {
+                await fetch(`/api/cancel/${currentJobId}`, { method: 'POST' });
+                statusBadge.className = 'status-badge error';
+                statusBadge.textContent = 'Cancelled';
+                statusMessage.textContent = 'Job cancelled by user';
+                progressFill.style.width = '0%';
+                cancelActions.style.display = 'none';
+                clearInterval(pollInterval);
+                submitBtn.disabled = false;
+                btnText.textContent = 'Generate Snaglist';
+                btnSpinner.style.display = 'none';
+            } catch (err) {
+                console.error('Cancel failed:', err);
+            }
+        });
+
+        function pollStatus() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(async () => {
+                if (!currentJobId) return;
+                try {
+                    const resp = await fetch(`/api/progress/${currentJobId}`);
+                    const prog = await resp.json();
+                    
+                    if (prog.step === 'error') {
+                        statusBadge.className = 'status-badge error';
+                        statusBadge.textContent = 'Error';
+                        statusMessage.textContent = prog.message || 'Processing failed';
+                        progressFill.style.width = '0%';
+                        clearInterval(pollInterval);
+                        submitBtn.disabled = false;
+                        btnText.textContent = 'Generate Snaglist';
+                        btnSpinner.style.display = 'none';
+                        return;
+                    }
+                    
+                    if (prog.step === 'complete') {
+                        progressFill.style.width = '100%';
+                        statusBadge.className = 'status-badge success';
+                        statusBadge.textContent = 'Complete';
+                        statusMessage.textContent = 'Processing complete!';
+                        downloadBtn.href = `/api/download/${currentJobId}`;
+                        statusActions.style.display = 'flex';
+                        cancelActions.style.display = 'none';
+                        clearInterval(pollInterval);
+                        submitBtn.disabled = false;
+                        btnText.textContent = 'Generate Snaglist';
+                        btnSpinner.style.display = 'none';
+                        return;
+                    }
+                    
+                    statusMessage.textContent = prog.message || 'Processing...';
+                    progressFill.style.width = `${prog.percent || 0}%`;
+                    
+                    const resp2 = await fetch(`/api/status/${currentJobId}`);
+                    const data = await resp2.json();
+                    if (data.status === 'done') {
+                        progressFill.style.width = '100%';
+                        statusBadge.className = 'status-badge success';
+                        statusBadge.textContent = 'Complete';
+                        statusMessage.textContent = `Generated ${data.result.total_snags} snags successfully!`;
+                        downloadBtn.href = `/api/download/${currentJobId}`;
+                        statusActions.style.display = 'flex';
+                        cancelActions.style.display = 'none';
+                        clearInterval(pollInterval);
+                        submitBtn.disabled = false;
+                        btnText.textContent = 'Generate Snaglist';
+                        btnSpinner.style.display = 'none';
+                    } else if (data.status === 'error') {
+                        statusBadge.className = 'status-badge error';
+                        statusBadge.textContent = 'Error';
+                        statusMessage.textContent = data.error || 'Processing failed';
+                        cancelActions.style.display = 'none';
+                        clearInterval(pollInterval);
+                        submitBtn.disabled = false;
+                        btnText.textContent = 'Generate Snaglist';
+                        btnSpinner.style.display = 'none';
+                    }
+                } catch (err) {
+                    console.error('Status check failed:', err);
+                }
+            }, 1000);
+        }
+
+        newJobBtn.addEventListener('click', () => {
+            selectedZip = null;
+            selectedChecklist = null;
+            currentJobId = null;
+            zipInput.value = '';
+            zipInfo.style.display = 'none';
+            dropZone.querySelector('.drop-zone-content').style.display = 'flex';
+            checklistInput.value = '';
+            checklistName.textContent = 'None selected';
+            removeChecklist.style.display = 'none';
+            statusCard.style.display = 'none';
+            cancelActions.style.display = 'none';
+            updateSubmitBtn();
+            if (pollInterval) clearInterval(pollInterval);
+        });
+    </script>
+</body>
+</html>

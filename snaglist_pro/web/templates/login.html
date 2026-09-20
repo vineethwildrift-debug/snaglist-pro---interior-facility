@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snaglist Pro | Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="login-shell">
+        <div class="login-brand">
+            <h1>Snaglist Pro</h1>
+            <p class="login-subtitle">Construction snag tracking made simple</p>
+        </div>
+
+        <form class="login-form" method="post" action="/login">
+            <label>
+                Email or Username
+                <input type="text" name="username" value="admin" required>
+            </label>
+
+            <label>
+                Password
+                <input type="password" name="password" value="admin123" required>
+            </label>
+
+            {% if error %}
+            <div class="login-error">{{ error }}</div>
+            {% endif %}
+
+            <div class="login-actions">
+                <button type="submit" class="btn-primary">Login</button>
+            </div>
+        </form>
+
+        <small class="login-meta">Demo access only • Developed by Vineeth.Bisa</small>
+    </div>
+
+    <div class="ui-watermark">Developed by Vineeth.Bisa</div>
+</body>
+</html>

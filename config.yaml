@@ -1,0 +1,66 @@
+# Snaglist Pro Configuration
+# Override any value via env var SNAGLIST__{SECTION}__{KEY}
+
+project:
+  default_facility: ETV
+  default_client: FSINV Global service pvt Ltd
+  default_floor: "6F"
+  default_priority: Medium
+  default_status: Open
+
+categories:
+  normalize:
+    hvac: Hvac
+    electrical: Electrical
+    interior: Interior
+    fire safety: Fire Safety
+    fire: Fire Safety
+    network: Network
+    network/it: Network
+    furniture: Furniture
+    cleaning: Cleaning
+    plumbing: Plumbing
+    civil: Civil
+    doors/windows: Interior
+    rodent entry point: Rodent entry point
+    parking: Parking
+    signages: Signages
+    landscapping: Landscapping
+    service: Service
+    electrical hod: Electrical HOD
+    hvac hod: Hvac HOD
+    fire safety hod: Fire Safety HOD
+    network hod: Network HOD
+    unassigned: Unassigned
+
+vendors:
+  Electrical: Ever green
+  Hvac: Apel (Carrier)
+  HVAC: Apel (Carrier)
+  Network: Nikhita
+  Fire Safety: V3 automation
+  Fire: V3 automation
+  Furniture: Imported & Featherlite
+
+priority:
+  high_keywords:
+    - critical
+    - urgent
+    - leak
+    - fire
+    - smoke
+    - short circuit
+    - hazard
+    - not working
+    - broken
+    - water leak
+    - immediately
+
+checklist:
+  auto_paths:
+    - ~/Downloads/Untitled spreadsheet (2).xlsx
+    - C:\Users\vinee\Downloads\Untitled spreadsheet (2).xlsx
+
+images:
+  resize_size: 200
+  quality: 90
