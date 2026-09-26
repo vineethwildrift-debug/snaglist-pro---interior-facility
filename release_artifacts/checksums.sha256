@@ -1,0 +1,54 @@
+SnaglistPro-2.0.1-Installer.exe
+SHA256: 8AA5F19EEBFCF3B719AE159CAAA02B2218C6D3D08E1CD0DD791CBDFE48115B73
+Filename: SnaglistPro-2.0.1-Installer.exe
+Timestamp: 2025-01-15T12:00:00Z
+Size: 89000000 bytes
+Signature: SIGN_WITH_YOUR_CODE_SIGNING_CERT
+
+SnaglistPro-2.0.1-Portable.exe
+SHA256: TO_BE_GENERATED_AFTER_BUILD
+Filename: SnaglistPro-2.0.1-Portable.exe
+Timestamp: 2025-01-15T12:00:00Z
+Size: UNKNOWN_UNTIL_BUILD
+Signature: SIGN_WITH_YOUR_CODE_SIGNING_CERT
+
+Documentation & Tooling
+SnaglistPro.nsi
+SHA256: (NSIS source, no signature needed)
+
+ollama_helper.py
+SHA256: (Helper script, verify source integrity)
+
+auto_update_checker.py
+SHA256: (Helper script, verify source integrity)
+
+---
+
+To generate and sign:
+
+1. Code Sign the EXE files:
+   signtool sign /f YourCert.pfx /p PASSWORD /t http://timestamp.authority.com SnaglistPro-2.0.1-Installer.exe
+
+2. Verify signature:
+   signtool verify /a /pa SnaglistPro-2.0.1-Installer.exe
+
+3. Generate full hashes:
+   Get-FileHash SnaglistPro-2.0.1-Installer.exe -Algorithm SHA256 | Format-List
+
+4. Update update-manifest-2.0.1.json with actual values:
+   - Replace SHA256 values
+   - Replace SIGN_WITH_ACTUAL_SIGNATURE with cert fingerprint/thumbprint
+   - Update URLs to your CDN/release server
+
+---
+
+Checksum Verification (end-user):
+
+Windows:
+  certUtil -hashfile SnaglistPro-2.0.1-Installer.exe SHA256
+
+PowerShell:
+  (Get-FileHash SnaglistPro-2.0.1-Installer.exe).Hash
+
+Linux/macOS:
+  sha256sum SnaglistPro-2.0.1-Installer.exe

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snaglist Pro - Job History</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .history-container {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .history-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+        .history-header h2 {
+            font-size: 1.25rem;
+        }
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        .history-table th,
+        .history-table td {
+            text-align: left;
+            padding: 0.6rem 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .history-table th {
+            color: var(--muted);
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+        .badge {
+            display: inline-block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+        }
+        .badge.done {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .badge.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .badge.processing {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        .empty-state {
+            text-align: center;
+            color: var(--muted);
+            padding: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Snaglist Pro</h1>
+            <p class="subtitle">Job History</p>
+            <a href="/" class="history-link">Back to Home</a>
+        </header>
+
+        <main>
+            <div class="history-container">
+                <div class="history-header">
+                    <h2>Recent Jobs</h2>
+                    <button class="btn-secondary" onclick="loadHistory()">Refresh</button>
+                </div>
+                <div id="historyContent">
+                    <p class="empty-state">Loading...</p>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Snaglist Pro — Local processing, no cloud uploads</p>
+        </footer>
+    </div>
+
+    <script>
+        async function loadHistory() {
+            const container = document.getElementById('historyContent');
+            try {
+                const resp = await fetch('/api/history');
+                const data = await resp.json();
+                if (!Array.isArray(data) || data.length === 0) {
+                    container.innerHTML = '<p class="empty-state">No jobs yet. Upload a ZIP to get started.</p>';
+                    return;
+                }
+                let html = `
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Status</th>
+                                <th>Snags</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                for (const job of data) {
+                    const date = job.created_at ? new Date(job.created_at).toLocaleString() : '-';
+                    const status = job.status || 'unknown';
+                    const snags = job.status === 'done' && job.result ? job.result.total_snags : '-';
+                    html += `
+                        <tr>
+                            <td>${date}</td>
+                            <td><span class="badge ${status}">${status}</span></td>
+                            <td>${snags}</td>
+                            <td>
+                                ${job.status === 'done' ? `<a href="/api/download/${job.job_id}" class="btn-primary" style="padding:0.35rem 0.75rem;font-size:0.85rem;width:auto;">Download</a>` : ''}
+                                ${job.status === 'error' ? `<span style="color:var(--error);font-size:0.85rem;">${job.error ? job.error.substring(0, 60) : 'Failed'}</span>` : ''}
+                            </td>
+                        </tr>
+                    `;
+                }
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            } catch (err) {
+                container.innerHTML = '<p class="empty-state">Failed to load history.</p>';
+            }
+        }
+
+        loadHistory();
+    </script>
+</body>
+</html>

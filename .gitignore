@@ -1,0 +1,83 @@
+# Snaglist Pro
+# See LICENSE_GUIDE.md for licensing
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# App data (user-specific, keep out of repo)
+%LOCALAPPDATA%/SnaglistPro/
+$HOME/.snaglist_pro/
+.env.local
+
+# Build artifacts
+02_build/SnaglistPro.exe
+*.exe
+*.msi
+
+# Release artifacts (except source manifests)
+release_artifacts/*.exe
+release_artifacts/*.msi
+test_output/
+test_output_api/
+
+# Private keys (CRITICAL - never commit)
+*.priv
+license.priv
+.private_key
+
+# Node modules (if web UI uses npm)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.temp
+.cache/

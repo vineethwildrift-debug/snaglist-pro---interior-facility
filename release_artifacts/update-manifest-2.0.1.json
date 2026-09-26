@@ -1,0 +1,67 @@
+{
+  "version": "2.0.1",
+  "release_date": "2025-01-15",
+  "channel": "stable",
+  "downloads": {
+    "installer_exe": {
+      "url": "https://releases.snaglist.pro/SnaglistPro-2.0.1-Installer.exe",
+      "filename": "SnaglistPro-2.0.1-Installer.exe",
+      "size_bytes": 89000000,
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "signature": "REPLACE_WITH_ACTUAL_SIGNATURE",
+      "release_notes": "https://releases.snaglist.pro/releases/2.0.1/CHANGELOG.md"
+    },
+    "portable_exe": {
+      "url": "https://releases.snaglist.pro/SnaglistPro-2.0.1-Portable.exe",
+      "filename": "SnaglistPro-2.0.1-Portable.exe",
+      "size_bytes": 95000000,
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "signature": "REPLACE_WITH_ACTUAL_SIGNATURE"
+    }
+  },
+  "minimum_requirements": {
+    "os": "Windows 10 (21H2) or later",
+    "processor": "x64 / 2 GHz",
+    "memory": "4 GB RAM (8 GB recommended)",
+    "disk_space": "500 MB"
+  },
+  "optional_features": {
+    "ai_support": {
+      "requires": "Ollama (https://ollama.ai)",
+      "models": ["llama3.2", "mistral", "neural-chat"],
+      "min_memory": "8 GB",
+      "min_disk": "10 GB"
+    }
+  },
+  "breaking_changes": [],
+  "known_issues": [
+    {
+      "id": "KNOWN_001",
+      "title": "HuggingFace model download test failure",
+      "description": "test_summary_sheet_open_closed_counts_reflect_actual_data fails without network/HF_TOKEN. Pre-existing, unrelated to v2.0.1 changes.",
+      "status": "acknowledged",
+      "workaround": "Set HF_TOKEN environment variable or run without this test."
+    },
+    {
+      "id": "KNOWN_002",
+      "title": "Google Sheets export in fast mode",
+      "description": "Google Sheets export (_gs.xlsx) not generated when running in fast_mode=True.",
+      "status": "acknowledged",
+      "workaround": "Run with fast_mode=False to generate Google Sheets export."
+    }
+  ],
+  "update_channel_info": {
+    "stable": "Production-ready releases, tested thoroughly",
+    "beta": "Pre-release builds, advanced testing required",
+    "dev": "Development builds, unstable"
+  },
+  "deployment": {
+    "enterprise_silent_install": "SnaglistPro-2.0.1-Installer.exe /S /D=$INSTDIR",
+    "enterprise_config": {
+      "template": "Use GROUP POLICY or deploy config.yaml via SCCM",
+      "env_vars": ["SNAGLIST__PROJECT__*", "SNAGLIST_LICENSE_*"],
+      "registry_path": "HKCU\\Software\\SnaglistPro"
+    },
+    "volume_licensing": "Contact sales@snaglist.pro for VL agreements"
+  }
+}
