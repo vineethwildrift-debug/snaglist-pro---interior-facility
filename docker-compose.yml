@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  snaglist-web:
+    build: .
+    container_name: snaglist-pro-web
+    ports:
+      - "5000:5000"
+    environment:
+      # Supplied from the host environment or a .env file (git-ignored).
+      # There is no working default on purpose: the app must not come up
+      # reachable with a well-known password.
+      SNAGLIST_APP_USERNAME: ${SNAGLIST_APP_USERNAME:?set SNAGLIST_APP_USERNAME in .env}
+      SNAGLIST_APP_PASSWORD: ${SNAGLIST_APP_PASSWORD:?set SNAGLIST_APP_PASSWORD in .env}
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      # Persist uploads and outputs
+      - ./uploads:/app/uploads
+      - ./output:/app/output
+      - ./data:/app/data
+    working_dir: /app
+    command: ["snaglist_pro", "--web", "--host", "0.0.0.0", "--port", "5000"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Optional: CLI worker for batch jobs
+  snaglist-cli:
+    build: .
+    container_name: snaglist-pro-cli
+    environment:
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./output:/app/output
+      - ./data:/app/data
+      - ./batch:/app/batch
+    working_dir: /app
+    command: ["snaglist_pro", "--zip", "/app/batch/input.zip", "--checklist", "/app/batch/checklist.xlsx", "--output", "/app/output"]
+    profiles: ["cli"]  # Run only when explicitly requested: docker compose --profile cli up
+
+volumes:
+  uploads:
+  output:
+  data:

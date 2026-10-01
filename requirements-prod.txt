@@ -1,0 +1,16 @@
+# Minimal production dependencies - excludes heavy ML libraries
+# Semantic-transformers (~2GB) can be added if needed
+
+openpyxl>=3.1.0
+Pillow>=10.0.0
+imagehash>=4.3.0
+pyyaml>=6.0
+sqlalchemy>=2.0.0
+python-dotenv>=1.0.0
+rapidfuzz>=3.0.0
+requests>=2.31.0
+flask>=3.0.0
+gunicorn>=21.0.0
+
+# Optional (for semantic matching - uncomment if needed):
+# sentence-transformers>=3.0.0

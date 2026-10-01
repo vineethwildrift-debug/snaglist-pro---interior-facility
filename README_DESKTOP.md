@@ -8,10 +8,14 @@ This project is now structured for a desktop-first installation flow.
 - The app does not rely on the project folder for runtime data.
 - This makes it more stable when packaged into a Windows EXE.
 
-## Default login
+## Login
 
-- Username: admin
-- Password: admin123
+Login credentials are set via environment variables:
+
+- `SNAGLIST_APP_USERNAME` (default: `admin` on first setup)
+- `SNAGLIST_APP_PASSWORD` (no default — must be configured)
+
+On first launch, set up credentials via the login screen or environment variables.
 
 ## Build commands
 

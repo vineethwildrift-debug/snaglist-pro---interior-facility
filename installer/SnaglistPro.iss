@@ -4,6 +4,10 @@
 [Setup]
 AppName=Snaglist Pro
 AppVersion=2.0.0
+AppPublisher=vineeth.raghu@indiqube.com
+AppPublisherURL=mailto:vineeth.raghu@indiqube.com
+AppSupportURL=mailto:vineeth.raghu@indiqube.com
+AppCopyright=Copyright (c) 2026 vineeth.raghu@indiqube.com
 DefaultDirName={localappdata}\Snaglist Pro
 DefaultGroupName=Snaglist Pro
 AllowNoIcons=no

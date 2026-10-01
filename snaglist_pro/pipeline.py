@@ -35,7 +35,35 @@ from snaglist_pro.ai_client import (
     guess_category_and_area,
     generate_summary,
     is_ai_available,
+    describe_image as ai_describe_image,
 )
+
+
+class LicenseError(RuntimeError):
+    """Raised when a paid feature is gated by the license entitlement."""
+
+
+def _check_license(feature: Optional[str] = None) -> None:
+    """Gate paid report generation on the current entitlement.
+
+    Opt-in: only called when the caller passes ``license_check=True``. When no
+    license is configured the app degrades to the unlicensed state rather than
+    crashing, so existing tests and the free tier keep working.
+    """
+    try:
+        from snaglist_pro import licensing
+    except Exception:
+        return  # licensing module not available; do not block
+    entitlement = licensing.evaluate_entitlement()
+    if entitlement.get("gated"):
+        raise LicenseError(
+            f"License check failed: {entitlement.get('reason', 'not licensed')}. "
+            "Install a valid license token to generate reports."
+        )
+    if feature and not licensing.is_feature_allowed(feature):
+        raise LicenseError(
+            f"Feature '{feature}' is not included in the current license."
+        )
 
 PHRASE_BOOST = [
     "light", "switch", "socket", "panel", "cable",
@@ -45,20 +73,99 @@ PHRASE_BOOST = [
     "clean", "floor", "partition", "glass", "ceiling",
 ]
 
+_REPORT_SPELLING = {
+    "Emeregency": "Emergency",
+    "allignment": "alignment",
+    "temparary": "temporary",
+    "Lighining": "Lighting",
+    "achiving": "achieving",
+    "Draiwings": "Drawings",
+    "installedded": "installed",
+    "installedd": "installed",
+    "installededd": "installed",
+    "rectifiy": "rectify",
+    "workinging": "working",
+    "fixeded": "fixed",
+    "obstuction": "obstruction",
+    "scoket": "socket",
+    "awarness": "awareness",
+    "signgages": "signages",
+    "engish": "English",
+    "stips": "strips",
+    "Exhuast": "Exhaust",
+    "Diffueser": "Diffuser",
+    "Landscapping": "Landscaping",
+    # Typos seen in snag captions lifted from the site chats.
+    "teil": "tile",
+    "jip": "zip",
+    "maut": "mat",
+    "partion": "partition",
+    "vissible": "visible",
+    "standerd": "standard",
+    "lavel": "level",
+    "issuess": "issues",
+    "namingg": "naming",
+    "groutingg": "grouting",
+    "leakagee": "leakage",
+    "instalation": "installation",
+    "comissioning": "commissioning",
+    "accoustic": "acoustic",
+    "aslo": "also",
+    "wich": "which",
+    "tehy": "they",
+    "thier": "their",
+    "recieve": "receive",
+    "seperate": "separate",
+    "occured": "occurred",
+    "neccessary": "necessary",
+    "existance": "existence",
+    "responce": "response",
+    "responsibile": "responsible",
+    # Doubled trailing consonants in site snag captions.
+    "replacedd": "replaced",
+    "removedd": "removed",
+    "providedd": "provided",
+    "controll": "control",
+    "damagedd": "damaged",
+}
+
+
+def correct_report_text_with_changes(value):
+    original = str(value or "")
+    text = original
+    changes = []
+    for incorrect, correct in _REPORT_SPELLING.items():
+        updated = re.sub(rf"\b{re.escape(incorrect)}\b", correct, text, flags=re.IGNORECASE)
+        if updated != text:
+            changes.append((incorrect, correct))
+            text = updated
+    return text, changes
+
+
+def correct_report_text(value):
+    return correct_report_text_with_changes(value)[0]
+
+
+def _correct_report_text(value):
+    return correct_report_text(value)
+
 
 SHEET_COLUMNS = [
-    "Slno", "Facility Name", "Client Name", "Date of given", "Floor",
-    "Area/location", "Catagory", "Check points", "Status (Open/Close)",
-    "Snag Points", "Priority", "Ref.images", "Ref.images", "Date of Closed",
-    "Closed Images", "Vendor name", "Project Spoc", "Transition spoc",
+    "Slno", "Facility Name", "Client Name", "Date Given", "Floor",
+    "Area/Location", "Category", "Check Points", "Status (Open/Close)",
+    "Snag Points", "Priority", "Ref. Images", "Ref. Images", "Date Closed",
+    "Closed Images", "Vendor Name", "Project SPOC", "Transition SPOC",
 ]
 
 COL_WIDTHS = {
     "A": 9.88, "B": 18.13, "C": 19.75, "D": 22.38, "E": 15.63,
     "F": 24.75, "G": 15.38, "H": 55.0, "I": 21.25, "J": 52.38,
-    "K": 16.38, "L": 28.0, "M": 13.0, "N": 13.0, "O": 14,
+    "K": 16.38, "L": 26.0, "M": 26.0, "N": 26.0, "O": 26.0,
     "P": 14, "Q": 18, "R": 18, "S": 18,
 }
+
+# Cell sizing for images
+IMAGE_CELL_HEIGHT = 200    # Row height in points
 
 FILL_GREEN = PatternFill("solid", fgColor="FFA9D18E")
 FILL_YELLOW = PatternFill("solid", fgColor="FFFCE5CD")
@@ -70,6 +177,96 @@ STYLE_BORDER = Border(
 HEADER_FONT = Font(bold=True)
 HEADER_ALIGN = Alignment(horizontal="center", vertical="center", wrap_text=True)
 DATA_ALIGN = Alignment(wrap_text=True, vertical="top")
+
+KNOWN_AREAS = [
+    "Director cabin", "Workstation area", "Post review room", "Cafeteria area",
+    "Cafeteria", "10pax meeting room", "2pax cabin", "Mr cabin", "Mr cabins",
+    "Boardroom", "Finance cabin", "IT cabin", "HOD", "All area",
+    "All cabins", "Acting and store rooms", "Store rooms", "Reception",
+    "Conference room", "Server room", "Pantry", "Storage", "Locker room",
+    "Acting room", "Right wing ups room", "Director cabin and workstation area",
+    "Washroom", "Bathroom", "Restroom", "Corridor", "Hallway", "Passage",
+    "Staircase", "Stairwell", "Lift lobby", "Elevator lobby", "Parking",
+    "Basement", "Garage", "Terrace", "Balcony", "Rooftop", "Facade",
+    "Exterior", "Landscaping", "Garden", "Electrical room", "AHU room",
+    "Mechanical room", "Chiller room", "Data center", "Locker",
+    "Foyer", "Entrance lobby", "Front desk", "Lounge", "Training room",
+    "Seminar room", "Discussion room", "VIP room", "Waiting area",
+    "Cubicle area", "Desk area", "Godown", "Warehouse",
+    "Terrace garden", "Deck", "Parking area", "Car park",
+    "Entry lobby", "Main lobby", "Reception desk",
+]
+
+def _vendor_override(category: str) -> str:
+    ov = settings.vendor_overrides or {}
+    return ov.get(category, "")
+
+
+def _resolve_vendor(category: str) -> str:
+    """Vendor for a category, general vendors map first.
+
+    vendor_overrides is looked up first in name only, but the values in
+    config.yaml are another site's vendor names (MD Electrical, IND Aircon) and
+    placeholder labels (Interior: Interior, Service: Service team), so letting
+    them win renamed vendors that were already correct. The general map is now
+    authoritative and the override table only fills categories it does not
+    cover, which is what actually used to happen in the packaged build where
+    config.yaml is absent and the override table is empty.
+    """
+    return get_vendor(category) or _vendor_override(category)
+
+CLOSED_KEYWORDS = [
+    "done", "completed", "aligned", "fixed", "confirmed",
+    "pass", "no issue", "no defect", "connected",
+    "closed", "finished",
+]
+
+STRONG_CLOSED_SIGNALS = [
+    "client scope", "out of scope", "not required", "not needed",
+    "not available", "declined", "not applicable",
+]
+
+PENDING_KEYWORDS = [
+    "need to", "to be ", "needs to", "should be", "required",
+    "not working", "broken", "damaged", "leaking", "missing",
+    "improper", "wrong",
+]
+
+_NEGATION_WORDS = {"not", "don't", "dont", "no", "never", "isnt", "isn't", "wasnt", "wasn't", "arent", "aren't"}
+
+
+def extract_area_from_text(text: str) -> str:
+    if not text:
+        return "All area"
+    t = text.lower()
+    for area in sorted(KNOWN_AREAS, key=len, reverse=True):
+        if area.lower() in t:
+            return area
+    return "All area"
+
+
+def determine_status(description: str) -> str:
+    if not description:
+        return "Open"
+    d = description.lower()
+    if d.strip() in ("na", "n/a", "none"):
+        return "Open"
+    # Check pending keywords FIRST: "to be closed" should be Open, not Closed
+    has_pending = any(pk in d for pk in PENDING_KEYWORDS)
+    if has_pending:
+        return "Open"
+    for sig in STRONG_CLOSED_SIGNALS:
+        if sig in d:
+            return "Closed"
+    for ck in CLOSED_KEYWORDS:
+        if ck in d:
+            idx = d.find(ck)
+            before = d[:idx].strip().split()
+            if any(w in _NEGATION_WORDS for w in before[-3:]):
+                return "Open"
+            return "Closed"
+    return "Open"
+
 
 _SYSTEM_TEXTS = {
     "ok", "ok,", "ok.", "okay", "yes", "no", "sure", "noted",
@@ -91,6 +288,12 @@ MESSAGE_HEADER_RE = re.compile(
     r"(.*)"
 )
 
+BRACKETED_MESSAGE_HEADER_RE = re.compile(
+    r"^\[(\d{1,2}/\d{1,2}/\d{2,4}),?\s*"
+    r"(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap][Mm])?)\]\s*"
+    r"(?:-\s*)?(.*)"
+)
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -100,10 +303,11 @@ logging.basicConfig(
 
 
 class AICallTracker:
-    def __init__(self, max_calls: int = 200):
+    def __init__(self, max_calls: int = 200, enabled: Optional[bool] = None):
         self.max_calls = max_calls
         self.calls = 0
-        self.enabled = settings.ai_enabled and is_ai_available()
+        self.enabled = settings.ai_enabled if enabled is None else enabled
+        self.enabled = self.enabled and is_ai_available()
 
     def call(self, func, *args, **kwargs):
         if not self.enabled:
@@ -254,11 +458,23 @@ def slugify_project(name: str) -> str:
     return slug.strip("_") or "project"
 
 
+def detect_project_floor(project_name: str) -> str:
+    match = re.search(r"\b(?:GF|B\d+|\d+(?:ST|ND|RD|TH)?F)\b", project_name or "", re.IGNORECASE)
+    return match.group(0).upper() if match else ""
+
+
 def extract_zip(zip_path: str, extract_dir: str) -> tuple:
     logging.info("Extracting ZIP: %s", zip_path)
+    if os.path.exists(extract_dir):
+        shutil.rmtree(extract_dir)
     os.makedirs(extract_dir, exist_ok=True)
+    extract_root = Path(extract_dir).resolve()
 
     with zipfile.ZipFile(zip_path, "r") as zf:
+        for member in zf.infolist():
+            target = (extract_root / member.filename).resolve()
+            if target != extract_root and extract_root not in target.parents:
+                raise ValueError(f"Unsafe ZIP path: {member.filename}")
         zf.extractall(extract_dir)
 
     text_content = None
@@ -296,9 +512,9 @@ def _is_system_message(text: str) -> bool:
             return True
     if re.search(r"\.(pdf|xlsx?|docx?|pptx?)", t):
         return True
-    if re.match(r"^etv\s*[-–—]?\s*6f$", t) or re.match(r"^6f\s*$", t):
+    if re.match(r"^\d+(?:st|nd|rd|th)?\s*f$", t):
         return True
-    if re.match(r"^[\w\-\.]+$", t) and len(t) < 60:
+    if re.match(r"^[\w\-\.]+$", t) and " " not in t and len(t) <= 12:
         return True
     return False
 
@@ -318,6 +534,39 @@ def _extract_attachment_filenames(message_text: str) -> list:
     return [name.strip("\"'") for name in candidates]
 
 
+def _detect_date_order(raw_dates: list) -> list:
+    """Pick the strptime format order that matches the export's date convention.
+
+    WhatsApp writes dates as either D/M/Y (India) or M/D/Y (US). Trying
+    "%d/%m/%Y" first silently swaps every ambiguous stamp such as "9/4/26", so
+    the convention is detected from the whole chat first: a first component
+    above 12 can only be a day (D/M/Y), a second component above 12 can only be
+    a day (M/D/Y). When every stamp is ambiguous the two readings are
+    indistinguishable from the numbers alone, so the format is picked once for
+    the whole chat (D/M/Y, the convention this tool has always produced) instead
+    of guessing per stamp and getting a different answer for each one.
+    """
+    day_first = month_first = False
+    for raw in raw_dates:
+        m = re.match(r"^\s*(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2,4}))?\s*$", str(raw))
+        if not m:
+            continue
+        a, b = int(m.group(1)), int(m.group(2))
+        if a > 12:
+            day_first = True
+        if b > 12:
+            month_first = True
+
+    if month_first and not day_first:
+        logging.info("  Date format detected: M/D/Y (US export)")
+        return ["%m/%d/%Y", "%m/%d/%y", "%d/%m/%Y", "%d/%m/%y"]
+    if day_first:
+        logging.info("  Date format detected: D/M/Y")
+    else:
+        logging.info("  All dates ambiguous; assuming D/M/Y")
+    return ["%d/%m/%Y", "%d/%m/%y", "%m/%d/%Y", "%m/%d/%y"]
+
+
 def parse_chat_messages(text: str) -> list:
     if not text:
         return []
@@ -329,6 +578,7 @@ def parse_chat_messages(text: str) -> list:
     for line in text.split("\n"):
         stripped = line.strip()
         match = MESSAGE_HEADER_RE.match(stripped) if stripped else None
+        bracketed_match = BRACKETED_MESSAGE_HEADER_RE.match(stripped) if stripped else None
         if match:
             if current_sender and current_message:
                 msg_text = "\n".join(current_message).strip()
@@ -337,6 +587,20 @@ def parse_chat_messages(text: str) -> list:
             current_date = match.group(1)
             current_sender = match.group(3).strip()
             current_message = [match.group(4)]
+        elif bracketed_match:
+            if current_sender and current_message:
+                msg_text = "\n".join(current_message).strip()
+                if msg_text:
+                    messages.append({"date": current_date, "sender": current_sender, "message": msg_text})
+            current_date = bracketed_match.group(1)
+            body = bracketed_match.group(3).strip()
+            sender_match = re.match(r"([^:]+):\s*(.*)", body)
+            if sender_match:
+                current_sender = sender_match.group(1).strip()
+                current_message = [sender_match.group(2)]
+            else:
+                current_sender = ""
+                current_message = [body]
         else:
             if current_sender and stripped:
                 current_message.append(stripped)
@@ -346,10 +610,13 @@ def parse_chat_messages(text: str) -> list:
         if msg_text:
             messages.append({"date": current_date, "sender": current_sender, "message": msg_text})
 
+    date_order = _detect_date_order(
+        [msg.get("date") for msg in messages if msg.get("date")]
+    )
     for msg in messages:
         d = msg.get("date")
         if d:
-            for fmt in ["%d/%m/%Y", "%m/%d/%Y", "%d/%m/%y", "%m/%d/%y"]:
+            for fmt in date_order:
                 try:
                     msg["date"] = datetime.strptime(d, fmt).strftime("%Y-%m-%d")
                     break
@@ -360,6 +627,8 @@ def parse_chat_messages(text: str) -> list:
 
 def pair_images_with_descriptions(messages: list, image_map: dict, ai_tracker: Optional[AICallTracker] = None) -> list:
     sorted_images = sorted(image_map.keys())
+    if not sorted_images:
+        logging.warning("  No images found in ZIP - media files may be missing from export")
     consumed = set()
 
     def _peek_unconsumed():
@@ -381,8 +650,18 @@ def pair_images_with_descriptions(messages: list, image_map: dict, ai_tracker: O
     def _clean_text(text):
         t = text or ""
         t = re.sub(r"IMG-\d{8}-WA\d+\.\w+\s*\(file attached\)\s*", "", t)
-        t = re.sub(r"<Media omitted>\s*", "", t)
+        t = re.sub(r"(?:<Media omitted>|<image omitted>|\[Image\])\s*", "", t, flags=re.IGNORECASE)
         t = re.sub(r"<attached:\s*[^>]+>\s*", "", t)
+        # A caption can be followed by a chat header the parser folded into the
+        # body ("Dbs area towers bolts 9/29/26, 6:41 PM - Abhilash added ...").
+        # Drop the header and everything after it so the snag point stays clean.
+        t = re.sub(
+            r"\s*\d{1,2}/\d{1,2}/\d{2,4},?\s+\d{1,2}:\d{2}\s*[APap][Mm]\s*-\s*.*$",
+            "",
+            t,
+        )
+        t = re.sub(r"[\u202f\u00a0]+", " ", t)
+        t = re.sub(r"\s{2,}", " ", t)
         t = t.strip()
         if t and _is_system_message(t):
             t = ""
@@ -390,6 +669,7 @@ def pair_images_with_descriptions(messages: list, image_map: dict, ai_tracker: O
 
     entries_by_index = {}
     omits_indices = []
+    missing_media_index = 0
 
     for i, msg in enumerate(messages):
         text = msg.get("message", "")
@@ -412,7 +692,7 @@ def pair_images_with_descriptions(messages: list, image_map: dict, ai_tracker: O
                     "date": date,
                     "description": clean,
                 }
-        elif "<Media omitted>" in text:
+        elif re.search(r"(?:<Media omitted>|<image omitted>|\[Image\])", text, re.IGNORECASE):
             omits_indices.append((i, msg, clean))
 
     for i, msg, clean in omits_indices:
@@ -429,10 +709,87 @@ def pair_images_with_descriptions(messages: list, image_map: dict, ai_tracker: O
                 "date": date,
                 "description": clean,
             }
+        else:
+            missing_media_index += 1
+            entries_by_index[i] = {
+                "image_filename": f"missing_media_{missing_media_index:04d}",
+                "image_path": "",
+                "sender": sender,
+                "date": date,
+                "description": clean,
+                "media_missing": True,
+            }
 
     entries = [entries_by_index[i] for i in sorted(entries_by_index.keys())]
-
+    entries = _merge_image_only_snags(entries)
     return entries
+
+
+def _merge_image_only_snags(entries: list) -> list:
+    """Attach photos sent without a description to the nearest text snag.
+
+    WhatsApp chats commonly send a batch of photos with no caption, followed
+    (or preceded) by a text message describing them. When a snag entry carries
+    an image but no description, it is merged into the nearest entry that has a
+    description on the same date, so the row keeps its description and the image
+    is not lost.
+
+    The sender is intentionally NOT required to match: on a live site the
+    supervisor (e.g. "Manu Indiqube Gowda") files the text snag while a
+    contractor or client (e.g. "+91 89715 11617") sends the photos of the same
+    area on the same day. Requiring the same sender left every such batch as an
+    orphan image with a blank description.
+
+    Both directions are searched (nearest preceding first, then nearest
+    following) because a photo batch may arrive before the describing text.
+    Entries that cannot be merged (no text snag on the same date at all) are
+    kept as-is.
+    """
+    merged = []
+    consumed = set()
+    for i, entry in enumerate(entries):
+        if i in consumed:
+            continue
+        desc = (entry.get("description") or "").strip()
+        if desc or not entry.get("image_filename"):
+            merged.append(entry)
+            continue
+        # Image-only snag: look for a text snag on the same date, nearest
+        # preceding first, then nearest following. Sender is not required to
+        # match (see module docstring rationale above).
+        host = None
+        for j in range(i - 1, -1, -1):
+            if j in consumed:
+                continue
+            other = entries[j]
+            other_desc = (other.get("description") or "").strip()
+            if other_desc and other.get("date") == entry.get("date"):
+                host = other
+                break
+        if host is None:
+            for j in range(i + 1, len(entries)):
+                if j in consumed:
+                    continue
+                other = entries[j]
+                other_desc = (other.get("description") or "").strip()
+                if other_desc and other.get("date") == entry.get("date"):
+                    host = other
+                    break
+        if host is None:
+            merged.append(entry)
+            continue
+        consumed.add(i)
+        fn = entry.get("image_filename", "")
+        existing = list(host.get("image_filenames") or [])
+        if fn and fn not in existing:
+            existing.append(fn)
+        host["image_filenames"] = existing
+        # Promote the first image to the primary slot if the host had none.
+        if not host.get("image_filename") and existing:
+            host["image_filename"] = existing[0]
+        extra = [f for f in existing if f != host.get("image_filename")]
+        host["extra_image_filenames"] = extra
+    return merged
 
 
 def deduplicate_snags(snags: list) -> list:
@@ -501,7 +858,7 @@ def deduplicate_by_phash(entries: list) -> list:
 
 
 def load_checklist(checklist_path: str) -> list:
-    if not os.path.exists(checklist_path):
+    if not checklist_path or not os.path.exists(checklist_path):
         logging.warning("  Checklist NOT FOUND: %s", checklist_path)
         return []
 
@@ -528,6 +885,8 @@ def load_checklist(checklist_path: str) -> list:
     cat_col = headers.get("Catagory", 7)
     check_col = headers.get("Check points", 8)
     pri_col = headers.get("Priority", 11)
+    snag_col = headers.get("Snag Points", 10)
+    area_col = headers.get("Area/Location", 6)
 
     items = []
     for row in ws.iter_rows(min_row=header_row + 1, max_row=1500, max_col=20):
@@ -535,17 +894,21 @@ def load_checklist(checklist_path: str) -> list:
         cat_v = str(row[cat_col - 1].value or "").strip() if row[cat_col - 1].value else ""
         check_v = str(row[check_col - 1].value or "").strip() if row[check_col - 1].value else ""
         pri_v = str(row[pri_col - 1].value or "").strip() if row[pri_col - 1].value else "Medium"
+        snag_v = str(row[snag_col - 1].value or "").strip() if row[snag_col - 1].value else ""
+        area_v = str(row[area_col - 1].value or "").strip() if row[area_col - 1].value else ""
 
         if slno_v is not None and check_v:
             try:
                 slno = int(float(slno_v))
             except (ValueError, TypeError):
-                slno = 0
+                continue  # Skip header/sub-header rows with non-numeric Slno
             items.append({
                 "slno": slno,
                 "category": cat_v if cat_v else "Unassigned",
                 "check_points": check_v,
                 "priority": pri_v if pri_v else "Medium",
+                "snag_points": snag_v,
+                "area_location": area_v,
             })
 
     wb.close()
@@ -637,6 +1000,13 @@ def match_to_checklist(description: str, guessed_category: str, checklist_items:
 
         cat_bonus = 0.08 if item["category"].lower() == guessed_category.lower() else 0.0
 
+        # Area/location proximity bonus
+        item_area = str(item.get("area_location", "") or "")
+        if item_area:
+            item_area_tokens = set(re.findall(r"\w+", item_area.lower()))
+            desc_tokens = set(re.findall(r"\w+", desc_lower))
+            if item_area_tokens & desc_tokens:
+                token_s += 0.10
         score = token_s + cat_bonus
 
         # Blend with semantic score if embeddings available
@@ -852,10 +1222,16 @@ def build_excel(
     output_path: str,
     sheet_name: Optional[str] = None,
     ai_tracker: Optional[AICallTracker] = None,
+    project_client: Optional[str] = None,
+    project_facility: Optional[str] = None,
+    project_floor: Optional[str] = None,
 ) -> str:
     logging.info("Building Excel: %s", output_path)
+    project_client_name = project_client or settings.project_default_client
+    project_facility_name = project_facility or settings.project_default_facility
+    project_floor_name = project_floor or settings.project_default_floor
     if not sheet_name:
-        sheet_name = f"{settings.project_default_facility} - {settings.project_default_floor}"
+        sheet_name = project_facility_name or "Snaglist"
 
     wb = openpyxl.Workbook()
     safe_name = sheet_name.replace("/", "-").replace("\\", "-").replace("?", "").replace("*", "").replace("[", "").replace("]", "").replace(":", "-")
@@ -863,7 +1239,7 @@ def build_excel(
     if not safe_name:
         safe_name = "Snaglist"
     ws = wb.active
-    ws.title = safe_name[:20]
+    ws.title = safe_name[:31]
 
     ws["A2"] = "Index"
     ws["I2"] = "Date"
@@ -888,6 +1264,15 @@ def build_excel(
             heuristic_desc = infer_description_from_image(snag["image_path"], desc_raw)
             if heuristic_desc:
                 desc_enhanced = heuristic_desc
+        if not desc_enhanced and snag.get("image_path"):
+            # WhatsApp chats frequently send photos with no caption. Use a
+            # vision model to describe the image so the row is not blank.
+            # This is a data-filling fallback, so it runs independently of the
+            # text-AI tracker (which may be disabled when no text model is
+            # installed but a vision model is available).
+            vision_desc = ai_describe_image(snag["image_path"], desc_raw)
+            if vision_desc:
+                desc_enhanced = vision_desc
         if not desc_enhanced and ai_tracker and ai_tracker.enabled:
             ai_desc = ai_tracker.call(enhance_description, desc_raw or "Construction defect in image")
             if ai_desc:
@@ -919,42 +1304,160 @@ def build_excel(
     matched_count = 0
     unmatched_checklist = 0
     unmatched_snag_count = 0
+    correction_log = []
     stats = Counter()
     row_num = 8
 
-    slno_to_snag = {}
-    for snag, matched_item, desc_enhanced, guessed_cat in snag_with_match:
-        if matched_item:
-            slno = matched_item["slno"]
-            if slno not in slno_to_snag:
-                slno_to_snag[slno] = (snag, matched_item, desc_enhanced, guessed_cat)
+    def _get_checklist_snag_points(snag, checklist):
+        """Find the most contextually relevant Snag Points from checklist for a snag."""
+        snag_desc = (snag.get("description") or "").lower()
+        best_snag = ""
+        best_score = 0
+        for item in checklist:
+            item_snag = str(item.get("snag_points", "") or "")
+            if not item_snag:
+                continue
+            item_tokens = set(re.findall(r"\w+", item_snag.lower()))
+            desc_tokens = set(re.findall(r"\w+", snag_desc)) if snag_desc else set()
+            overlap = len(item_tokens & desc_tokens)
+            item_area = str(item.get("area_location", "") or "").lower()
+            if item_area:
+                area_tokens = set(re.findall(r"\w+", item_area))
+                if area_tokens & desc_tokens:
+                    overlap += 2
+            if overlap > best_score:
+                best_score = overlap
+                best_snag = item_snag
+        return best_snag
 
+    def _consolidate_by_area(snag_with_match):
+        """Group snags that map to the same checklist item + area into one row.
+
+        Multiple chat messages for the same checklist item and area are merged
+        rather than dropped: their descriptions are joined (so no row is left
+        blank) and every image filename is collected so it can be embedded.
+        """
+        grouped = {}
+        for snag, matched_item, desc_enhanced, guessed_cat in snag_with_match:
+            if not matched_item:
+                continue
+            area = extract_area_from_text(desc_enhanced or snag.get("description", ""))
+            key = (matched_item["slno"], area)
+            if key not in grouped:
+                grouped[key] = {
+                    "snag": dict(snag),
+                    "matched_item": matched_item,
+                    "guessed_cat": guessed_cat,
+                    "descriptions": [],
+                    "image_filenames": [],
+                }
+            g = grouped[key]
+            desc = (snag.get("description") or "").strip()
+            if desc and desc not in g["descriptions"]:
+                g["descriptions"].append(desc)
+            fn = snag.get("image_filename", "")
+            if fn and fn not in g["image_filenames"]:
+                g["image_filenames"].append(fn)
+
+        consolidated = []
+        for g in grouped.values():
+            primary = g["snag"]
+            merged_desc = " | ".join(g["descriptions"])
+            primary["description"] = merged_desc
+            # Deduplicate image filenames across the merged group and split
+            # into a primary image and extras (up to the template's two image
+            # columns, L and M).
+            seen = []
+            for fn in g["image_filenames"]:
+                if fn and fn not in seen:
+                    seen.append(fn)
+            primary["image_filenames"] = seen
+            primary["image_filename"] = seen[0] if seen else ""
+            primary["extra_image_filenames"] = seen[1:]
+            consolidated.append((
+                primary,
+                g["matched_item"],
+                enhance_description(merged_desc),
+                g["guessed_cat"],
+            ))
+        return consolidated
+
+    # DISABLED: Don't consolidate snags - each should be separate row
+    # Each unique checklist item + description = separate row (no merging)
+    consolidated = [(s, m, d, c) for s, m, d, c in snag_with_match if m]
+    logging.info("  Using %d snags after filtering (no consolidation)", len(consolidated))
+
+    # Group matched snags by checklist slno. Several chat snags can legitimately
+    # answer the same checklist question (e.g. "Ahu room door handle need to be
+    # install" and "Ahu room unwanted material need to be clear" both hit the AHU
+    # door item), so every one of them is kept and gets its own row below.
+    snags_by_slno = {}
+    for snag, matched_item, desc_enhanced, guessed_cat in consolidated:
+        snags_by_slno.setdefault(matched_item["slno"], []).append(
+            (snag, matched_item, desc_enhanced, guessed_cat)
+        )
+
+    # Expand the checklist into one entry per matched snag. A checklist question
+    # with N matching snags yields N rows; a question with no match still yields
+    # its single unmatched row. Keeping only the first snag per slno silently
+    # discarded the rest, which lost most of the captured snag points.
+    expanded_items = []
     for item in checklist_items:
+        hits = snags_by_slno.get(item["slno"], [])
+        if not hits:
+            expanded_items.append((item, None))
+        else:
+            for hit in hits:
+                expanded_items.append((item, hit))
+
+    for item, hit in expanded_items:
         slno = item["slno"]
-        cat = settings.normalize_category(item["category"])
-        check_point = item["check_points"]
+        cat = _correct_report_text(settings.normalize_category(item["category"]))
+        check_point, check_changes = correct_report_text_with_changes(item["check_points"])
+        correction_log.extend(("Check Points", original, corrected) for original, corrected in check_changes)
         pri = item["priority"]
-        vendor = get_vendor(cat)
+        vendor = _resolve_vendor(cat)
         stats[cat] += 1
 
-        if slno in slno_to_snag:
+        if hit:
             matched_count += 1
-            snag, matched_item, desc_enhanced, guessed_cat = slno_to_snag[slno]
+            snag, matched_item, desc_enhanced, guessed_cat = hit
             desc_raw = snag.get("description", "")
-            guessed_area = guess_area(desc_enhanced or desc_raw)
+            # Use checklist item's area_location first, fallback to text extraction
+            checklist_area = matched_item.get("area_location", "")
+            guessed_area = extract_area_from_text(checklist_area) if checklist_area else extract_area_from_text(desc_enhanced or desc_raw)
             priority = determine_priority(desc_raw, matched_item)
 
+            corrected_description, description_changes = correct_report_text_with_changes(desc_enhanced)
+            correction_log.extend(("Snag Points", original, corrected) for original, corrected in description_changes)
+            # Fallback: when the chat message carried no description (a common
+            # WhatsApp pattern where photos are sent on their own), use the
+            # matched checklist item's Snag Points so the row is not blank.
+            if not corrected_description:
+                checklist_snag = str(matched_item.get("snag_points", "") or "").strip()
+                if checklist_snag:
+                    corrected_description = checklist_snag
+                    correction_log.append(("Snag Points", "", checklist_snag))
+            # Use snag's actual date instead of current date
+            snag_date = snag.get("date", "")
+            if snag_date:
+                try:
+                    date_given = datetime.strptime(snag_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+                except ValueError:
+                    date_given = datetime.now().strftime("%d/%m/%Y")
+            else:
+                date_given = datetime.now().strftime("%d/%m/%Y")
             row_vals = [
                 matched_count,
-                settings.project_default_facility,
-                settings.project_default_client,
-                datetime.now().strftime("%d/%m/%Y"),
-                settings.project_default_floor,
+                project_facility_name,
+                project_client_name,
+                date_given,
+                project_floor_name,
                 guessed_area,
                 cat,
                 check_point,
-                settings.project_default_status,
-                desc_enhanced,
+                determine_status(desc_raw),
+                corrected_description,
                 priority,
             ]
 
@@ -964,30 +1467,63 @@ def build_excel(
                 cell.border = STYLE_BORDER
 
             img_path = resized_map.get(snag["image_filename"])
-            if img_path and os.path.exists(img_path):
+            extra_paths = [resized_map.get(fn) for fn in snag.get("extra_image_filenames", [])]
+            extra_paths = [p for p in extra_paths if p and os.path.exists(p)]
+            # Grouped images: embed multiple images in columns L, M, N, O (up to 4 per row)
+            # Each image is 200x200 pixels and fixed inside its cell
+            image_columns = ["L", "M", "N", "O"]  # Support up to 4 grouped images
+            all_img_paths = [img_path] + extra_paths if img_path else extra_paths
+            
+            for idx, path in enumerate(all_img_paths[:len(image_columns)]):
+                if not path or not os.path.exists(path):
+                    continue
+                col_letter = image_columns[idx]
                 try:
-                    img = XLImage(img_path)
-                    img.width = 200
-                    img.height = 200
-                    ws.add_image(img, f"L{row_num}")
+                    img = XLImage(path)
+                    img.width = 200      # 200 pixels width
+                    img.height = 200     # 200 pixels height
+                    # Add image anchored to cell (fixed inside, not floating)
+                    ws.add_image(img, f"{col_letter}{row_num}")
+                    # Set column width to fit 200px image
+                    ws.column_dimensions[col_letter].width = 26.0
                 except Exception as e:
-                    logging.warning("  Image embed failed row %d: %s", row_num, e)
+                    logging.warning("  Image embed failed row %d col %s: %s", row_num, col_letter, e)
 
+            # Set row height to 200 points to fit 200x200 images
             ws.row_dimensions[row_num].height = 200
             for col_idx in range(12, 19):
                 cell = ws.cell(row=row_num, column=col_idx)
                 cell.alignment = DATA_ALIGN
                 cell.border = STYLE_BORDER
+            if snag.get("media_missing"):
+                ws.cell(row=row_num, column=12, value="Media file not included in ZIP export")
             ws.cell(row=row_num, column=16, value=vendor).border = STYLE_BORDER
+            # Set Date Closed for closed snags
+            status_val = determine_status(desc_raw)
+            if status_val == "Closed":
+                snag_date = snag.get("date", "")
+                if snag_date:
+                    try:
+                        ws.cell(row=row_num, column=14, value=datetime.strptime(snag_date, "%Y-%m-%d").strftime("%d/%m/%Y")).border = STYLE_BORDER
+                    except ValueError:
+                        ws.cell(row=row_num, column=14, value=datetime.now().strftime("%d/%m/%Y")).border = STYLE_BORDER
+                else:
+                    ws.cell(row=row_num, column=14, value=datetime.now().strftime("%d/%m/%Y")).border = STYLE_BORDER
+            # Set default SPOC values
+            ws.cell(row=row_num, column=17, value="Project SPOC").border = STYLE_BORDER
+            ws.cell(row=row_num, column=18, value="Transition SPOC").border = STYLE_BORDER
         else:
             unmatched_checklist += 1
+            # Use checklist item's area_location instead of "All area"
+            checklist_area = item.get("area_location", "")
+            guessed_area = extract_area_from_text(checklist_area) if checklist_area else "All area"
             row_vals = [
                 matched_count + unmatched_checklist,
-                settings.project_default_facility,
-                settings.project_default_client,
+                project_facility_name,
+                project_client_name,
                 "",
-                settings.project_default_floor,
-                "",
+                project_floor_name,
+                guessed_area,
                 cat,
                 check_point,
                 "Open",
@@ -999,31 +1535,69 @@ def build_excel(
                 cell.alignment = DATA_ALIGN
                 cell.border = STYLE_BORDER
             ws.cell(row=row_num, column=16, value=vendor).border = STYLE_BORDER
+            ws.cell(row=row_num, column=17, value="Project SPOC").border = STYLE_BORDER
+            ws.cell(row=row_num, column=18, value="Transition SPOC").border = STYLE_BORDER
 
         row_num += 1
+
+    def _fallback_category_from_checklist(desc_raw: str) -> str:
+        if not desc_raw:
+            return "Unassigned"
+        desc_words = set(w.lower() for w in re.findall(r"[a-zA-Z]+", desc_raw) if len(w) > 2)
+        best_cat = "Unassigned"
+        best_score = 0
+        for item in checklist_items:
+            item_cat = item.get("category", "")
+            if not item_cat or item_cat.lower() in ("unassigned", "general"):
+                continue
+            item_text = f"{item.get('check_points', '')} {item.get('description', '')} {item.get('item', '')} {item.get('title', '')}"
+            item_words = set(w.lower() for w in re.findall(r"[a-zA-Z]+", item_text) if len(w) > 2)
+            overlap = len(desc_words & item_words)
+            if overlap > best_score:
+                best_score = overlap
+                best_cat = item_cat
+        return best_cat
 
     for snag, matched_item, desc_enhanced, guessed_cat in snag_with_match:
         if matched_item:
             continue
         unmatched_snag_count += 1
         desc_raw = snag.get("description", "")
-        guessed_area = guess_area(desc_enhanced or desc_raw)
-        category = settings.normalize_category(guessed_cat)
+        guessed_area = extract_area_from_text(desc_enhanced or desc_raw)
+        if guessed_cat == "Unassigned":
+            guessed_cat = _fallback_category_from_checklist(desc_raw)
+        category = _correct_report_text(settings.normalize_category(guessed_cat))
         priority = determine_priority(desc_raw, None)
-        vendor = get_vendor(category)
+        vendor = _resolve_vendor(category)
         stats[category] += 1
 
+        corrected_description, description_changes = correct_report_text_with_changes(desc_enhanced)
+        # Use checklist Snag Points as fallback when description is empty
+        if not corrected_description:
+            checklist_snag = _get_checklist_snag_points(snag, checklist_items)
+            if checklist_snag:
+                corrected_description = checklist_snag
+        correction_log.extend(("Snag Points", original, corrected) for original, corrected in description_changes)
+        # Use snag's actual date instead of current date
+        snag_date = snag.get("date", "")
+        if snag_date:
+            try:
+                date_given = datetime.strptime(snag_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except ValueError:
+                date_given = datetime.now().strftime("%d/%m/%Y")
+        else:
+            date_given = datetime.now().strftime("%d/%m/%Y")
         row_vals = [
             matched_count + unmatched_checklist + unmatched_snag_count,
-            settings.project_default_facility,
-            settings.project_default_client,
-            datetime.now().strftime("%d/%m/%Y"),
-            settings.project_default_floor,
+            project_facility_name,
+            project_client_name,
+            date_given,
+            project_floor_name,
             guessed_area,
             category,
             "",
-            settings.project_default_status,
-            desc_enhanced,
+            determine_status(desc_raw),
+            corrected_description,
             priority,
         ]
 
@@ -1032,22 +1606,43 @@ def build_excel(
             cell.alignment = DATA_ALIGN
             cell.border = STYLE_BORDER
 
-        img_path = resized_map.get(snag["image_filename"])
-        if img_path and os.path.exists(img_path):
-            try:
-                img = XLImage(img_path)
-                img.width = 200
-                img.height = 200
-                ws.add_image(img, f"L{row_num}")
-            except Exception as e:
-                logging.warning("  Image embed failed row %d: %s", row_num, e)
+            img_path = resized_map.get(snag["image_filename"])
+            extra_paths = [resized_map.get(fn) for fn in snag.get("extra_image_filenames", [])]
+            extra_paths = [p for p in extra_paths if p and os.path.exists(p)]
+            primary_col = "L"
+            for idx, path in enumerate([img_path] + extra_paths):
+                if not path or not os.path.exists(path):
+                    continue
+                try:
+                    img = XLImage(path)
+                    img.width = 200
+                    img.height = 200
+                    ws.add_image(img, f"{primary_col if idx == 0 else 'M'}{row_num}")
+                except Exception as e:
+                    logging.warning("  Image embed failed row %d: %s", row_num, e)
 
-        ws.row_dimensions[row_num].height = 200
-        for col_idx in range(12, 19):
-            cell = ws.cell(row=row_num, column=col_idx)
-            cell.alignment = DATA_ALIGN
-            cell.border = STYLE_BORDER
+            ws.row_dimensions[row_num].height = 200
+            for col_idx in range(12, 19):
+                cell = ws.cell(row=row_num, column=col_idx)
+                cell.alignment = DATA_ALIGN
+                cell.border = STYLE_BORDER
+            if snag.get("media_missing"):
+                ws.cell(row=row_num, column=12, value="Media file not included in ZIP export")
         ws.cell(row=row_num, column=16, value=vendor).border = STYLE_BORDER
+        # Set Date Closed for closed snags
+        status_val = determine_status(desc_raw)
+        if status_val == "Closed":
+            snag_date = snag.get("date", "")
+            if snag_date:
+                try:
+                    ws.cell(row=row_num, column=14, value=datetime.strptime(snag_date, "%Y-%m-%d").strftime("%d/%m/%Y")).border = STYLE_BORDER
+                except ValueError:
+                    ws.cell(row=row_num, column=14, value=datetime.now().strftime("%d/%m/%Y")).border = STYLE_BORDER
+            else:
+                ws.cell(row=row_num, column=14, value=datetime.now().strftime("%d/%m/%Y")).border = STYLE_BORDER
+        # Set default SPOC values
+        ws.cell(row=row_num, column=17, value="Project SPOC").border = STYLE_BORDER
+        ws.cell(row=row_num, column=18, value="Transition SPOC").border = STYLE_BORDER
         row_num += 1
 
     for col_letter, width in COL_WIDTHS.items():
@@ -1066,19 +1661,44 @@ def build_excel(
             p = row[0]
             if p:
                 priority_counts[p] += 1
+        open_count = 0
+        closed_count = 0
+        for row in ws.iter_rows(min_row=8, max_row=row_num - 1, min_col=9, max_col=9, values_only=True):
+            status = row[0]
+            if status == "Open":
+                open_count += 1
+            elif status == "Closed":
+                closed_count += 1
         summary_stats = {
             "total": row_num - 8,
             "matched": matched_count,
             "unmatched": unmatched_checklist + unmatched_snag_count,
-            "open": row_num - 8,
-            "closed": 0,
+            "unmatched_snags": unmatched_snag_count,
+            "open": open_count,
+            "closed": closed_count,
             "categories": dict(stats),
             "priorities": dict(priority_counts),
             "vendors": dict(vendor_counts),
         }
-        add_summary_sheet(wb, summary_stats, data_sheet=sheet_name[:31])
+        add_summary_sheet(wb, summary_stats, data_sheet=ws.title)
     except ImportError:
         pass
+
+    if correction_log:
+        notes = wb.create_sheet("Correction Notes")
+        notes.append(["Field", "Original", "Corrected"])
+        seen = set()
+        for field, original, corrected in correction_log:
+            key = (field, original, corrected)
+            if key not in seen:
+                notes.append([field, original, corrected])
+                seen.add(key)
+        for cell in notes[1]:
+            cell.font = HEADER_FONT
+        notes.freeze_panes = "A2"
+        notes.column_dimensions["A"].width = 18
+        notes.column_dimensions["B"].width = 45
+        notes.column_dimensions["C"].width = 45
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     wb.save(output_path)
@@ -1095,13 +1715,19 @@ def build_excel_google_sheets(
     output_path: str,
     sheet_name: Optional[str] = None,
     snag_with_match: Optional[list] = None,
+    project_client: Optional[str] = None,
+    project_facility: Optional[str] = None,
+    project_floor: Optional[str] = None,
 ) -> str:
     logging.info("Building Google Sheets Excel: %s", output_path)
+    project_client_name = project_client or settings.project_default_client
+    project_facility_name = project_facility or settings.project_default_facility
+    project_floor_name = project_floor or settings.project_default_floor
     if not sheet_name:
-        sheet_name = f"{settings.project_default_facility} - {settings.project_default_floor}"
+        sheet_name = project_facility_name or "Snaglist"
 
     wb = openpyxl.Workbook()
-    safe_name = sheet_name.replace("/", "-").replace("\\", "-").replace("?", "").replace("*", "").replace("[", "").replace("]", "").replace(":", "-").strip()[:20]
+    safe_name = sheet_name.replace("/", "-").replace("\\", "-").replace("?", "").replace("*", "").replace("[", "").replace("]", "").replace(":", "-").strip()[:31]
     if not safe_name:
         safe_name = "Snaglist"
     ws = wb.active
@@ -1145,23 +1771,33 @@ def build_excel_google_sheets(
         if matched_item:
             matched_count += 1
             desc_raw = snag.get("description", "")
-            guessed_area = guess_area(desc_enhanced or desc_raw)
+            guessed_area = extract_area_from_text(desc_enhanced or desc_raw)
             category = settings.normalize_category(guessed_cat)
             priority = determine_priority(desc_raw, matched_item)
-            vendor = get_vendor(category)
+            vendor = _resolve_vendor(category)
             stats[category] += 1
+
+            # Use snag's actual date instead of current date
+            snag_date = snag.get("date", "")
+            if snag_date:
+                try:
+                    date_given = datetime.strptime(snag_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+                except ValueError:
+                    date_given = datetime.now().strftime("%d/%m/%Y")
+            else:
+                date_given = datetime.now().strftime("%d/%m/%Y")
 
             row_vals = [
                 matched_count,
-                settings.project_default_facility,
-                settings.project_default_client,
-                datetime.now().strftime("%d/%m/%Y"),
-                settings.project_default_floor,
+                project_facility_name,
+                project_client_name,
+                date_given,
+                project_floor_name,
                 guessed_area,
                 category,
                 matched_item["check_points"],
-                settings.project_default_status,
-                desc_enhanced,
+                determine_status(desc_raw),
+                _correct_report_text(desc_enhanced),
                 priority,
                 snag.get("image_filename", ""),
                 "",
@@ -1178,13 +1814,16 @@ def build_excel_google_sheets(
             ws.row_dimensions[row_num].height = 30
         else:
             unmatched_checklist += 1
+            # Use checklist item's area_location instead of empty
+            checklist_area = matched_item.get("area_location", "") if matched_item else ""
+            guessed_area = extract_area_from_text(checklist_area) if checklist_area else ""
             row_vals = [
                 matched_count + unmatched_checklist,
-                settings.project_default_facility,
-                settings.project_default_client,
+                project_facility_name,
+                project_client_name,
                 "",
-                settings.project_default_floor,
-                "",
+                project_floor_name,
+                guessed_area,
                 settings.normalize_category(guessed_cat),
                 "",
                 "Open",
@@ -1209,12 +1848,22 @@ def build_excel_google_sheets(
         vendor = get_vendor(category)
         stats[category] += 1
 
+        # Use snag's actual date instead of current date
+        snag_date = snag.get("date", "")
+        if snag_date:
+            try:
+                date_given = datetime.strptime(snag_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except ValueError:
+                date_given = datetime.now().strftime("%d/%m/%Y")
+        else:
+            date_given = datetime.now().strftime("%d/%m/%Y")
+
         row_vals = [
             matched_count + unmatched_checklist + unmatched_snag_count,
-            settings.project_default_facility,
-            settings.project_default_client,
-            datetime.now().strftime("%d/%m/%Y"),
-            settings.project_default_floor,
+            project_facility_name,
+            project_client_name,
+            date_given,
+            project_floor_name,
             guessed_area,
             category,
             "",
@@ -1233,6 +1882,20 @@ def build_excel_google_sheets(
             cell = ws.cell(row=row_num, column=col_idx, value=val)
             cell.alignment = Alignment(wrap_text=True, vertical="top")
             cell.border = STYLE_BORDER
+        # Set Date Closed for closed snags
+        status_val = determine_status(desc_raw)
+        if status_val == "Closed":
+            snag_date = snag.get("date", "")
+            if snag_date:
+                try:
+                    ws.cell(row=row_num, column=14, value=datetime.strptime(snag_date, "%Y-%m-%d").strftime("%d/%m/%Y")).border = STYLE_BORDER
+                except ValueError:
+                    ws.cell(row=row_num, column=14, value=datetime.now().strftime("%d/%m/%Y")).border = STYLE_BORDER
+            else:
+                ws.cell(row=row_num, column=14, value=datetime.now().strftime("%d/%m/%Y")).border = STYLE_BORDER
+        # Set default SPOC values
+        ws.cell(row=row_num, column=17, value="Project SPOC").border = STYLE_BORDER
+        ws.cell(row=row_num, column=18, value="Transition SPOC").border = STYLE_BORDER
         ws.row_dimensions[row_num].height = 30
         row_num += 1
 
@@ -1261,7 +1924,12 @@ class SnaglistPipeline:
         db_session=None,
         progress_callback=None,
         fast_mode: bool = False,
+        ai_enabled: Optional[bool] = None,
+        license_check: bool = False,
     ) -> dict:
+        if license_check:
+            _check_license("report_generation")
+
         def _progress(step, message, percent):
             if progress_callback:
                 progress_callback(step, message, percent)
@@ -1279,10 +1947,9 @@ class SnaglistPipeline:
 
         if project_name is None:
             project_name = detect_project_name(text_content, zip_path)
-            if project_name and project_name != "Unknown Project":
-                settings.project_default_client = project_name
-            else:
-                settings.project_default_client = ""
+        project_client = project_name if project_name and project_name != "Unknown Project" else ""
+        project_facility = project_name if project_name and project_name != "Unknown Project" else "Unknown Project"
+        project_floor = detect_project_floor(project_name)
         logging.info("  Project: %s", project_name)
 
         logging.info("=" * 50)
@@ -1291,7 +1958,10 @@ class SnaglistPipeline:
         logging.info("  Parsed %d raw messages", len(messages))
         _progress("parse", f"Parsed {len(messages)} messages", 20)
 
-        ai_tracker = AICallTracker(max_calls=settings.max_ai_calls_per_run)
+        ai_tracker = AICallTracker(
+            max_calls=settings.max_ai_calls_per_run,
+            enabled=ai_enabled,
+        )
         logging.info("AI status: %s", ai_tracker.status())
 
         snags = pair_images_with_descriptions(messages, image_map, ai_tracker=ai_tracker)
@@ -1339,6 +2009,9 @@ class SnaglistPipeline:
             snags, checklist_items, resized_map, excel_path,
             sheet_name=project_name[:31],
             ai_tracker=ai_tracker,
+            project_client=project_client,
+            project_facility=project_facility,
+            project_floor=project_floor,
         )
         _progress("excel", "Excel built", 90)
 
@@ -1349,6 +2022,9 @@ class SnaglistPipeline:
             build_excel_google_sheets(
                 snags, checklist_items, resized_map, gs_excel_path,
                 sheet_name=project_name[:31],
+                project_client=project_client,
+                project_facility=project_facility,
+                project_floor=project_floor,
             )
 
         logging.info("=" * 50)
@@ -1356,8 +2032,8 @@ class SnaglistPipeline:
         _progress("report", "Saving report...", 95)
         data_path = os.path.join(output_dir, "snag_data.json")
         report = {
-            "project": f"{settings.project_default_facility} - {settings.project_default_client}",
-            "floor": settings.project_default_floor,
+            "project": project_name,
+            "floor": project_floor,
             "generated_at": datetime.now().isoformat(),
             "total_snags": len(snags),
             "total_images": len(resized_map),
@@ -1387,7 +2063,7 @@ class SnaglistPipeline:
 
         if db_session:
             try:
-                self._persist_to_db(db_session, project_name, snags, attachment_entries)
+                self._persist_to_db(db_session, project_name, snags, attachment_entries, project_facility, project_client, project_floor)
             except Exception as e:
                 logging.warning("  DB persistence failed: %s", e)
 
@@ -1413,7 +2089,7 @@ class SnaglistPipeline:
             "snags": snags,
         }
 
-    def _persist_to_db(self, db_session, project_name: str, snags: list, attachment_entries: list):
+    def _persist_to_db(self, db_session, project_name: str, snags: list, attachment_entries: list, project_facility: str, project_client: str, project_floor: str):
         from snaglist_pro.models import Project, Snag as SnagModel, AttachmentRecord
 
         slug = slugify_project(project_name)
@@ -1422,9 +2098,9 @@ class SnaglistPipeline:
             project = Project(
                 name=project_name,
                 slug=slug,
-                facility=settings.project_default_facility,
-                client=settings.project_default_client,
-                floor=settings.project_default_floor,
+                facility=project_facility,
+                client=project_client,
+                floor=project_floor,
             )
             db_session.add(project)
             db_session.flush()

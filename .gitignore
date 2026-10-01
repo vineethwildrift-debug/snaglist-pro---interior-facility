@@ -1,24 +1,45 @@
-# Environment
+# Environment / secrets
 .env
-*.env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
-dist/
-build/
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+
+# Build artifacts
+dist/
+build/
+.buildozer/
+*.spec.bak
+build_log.txt
+
+# Generated reports / scratch output
+output*/
+test_output*/
+test_output_v2/
+_*_output*/
+_*_output_*/
+tmp_verified_output.xlsx
+web_download.xlsx
+*.log
+
+# Local model cache
+.ollama/
+
+# Stray editor/temp backups
+*.bak
+*.tmp
+*~
 
 # Database
 *.db
 data/
-
-# Outputs
-_web_uploads/
-output*/
-batch_output/
 
 # IDE
 .vscode/
@@ -32,3 +53,8 @@ Thumbs.db
 
 # Docker
 docker-data/
+
+# Nested React Native / Expo app with its own git repo and node_modules.
+# Tracked separately; see docs/superpowers.
+snaglist_mobile/
+node_modules/

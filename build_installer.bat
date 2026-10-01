@@ -2,7 +2,7 @@
 cd /d "%~dp0"
 if not exist dist\SnaglistPro.exe (
     echo Building EXE first...
-    python -m PyInstaller --onefile --noconsole --name SnaglistPro app_launcher.py --collect-submodules snaglist_pro
+    python -m PyInstaller --clean --noconfirm SnaglistPro.spec
 )
 
 if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (

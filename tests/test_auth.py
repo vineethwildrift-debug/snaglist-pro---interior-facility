@@ -1,3 +1,4 @@
+import os
 from snaglist_pro.web.app import app
 
 
@@ -10,14 +11,20 @@ def test_login_page_available():
 
 
 def test_admin_login_redirects_to_dashboard():
-    client = app.test_client()
-    response = client.post(
-        "/login",
-        data={"username": "admin", "password": "admin123"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith("/dashboard")
+    os.environ["SNAGLIST_APP_USERNAME"] = "admin"
+    os.environ["SNAGLIST_APP_PASSWORD"] = "admin123"
+    try:
+        client = app.test_client()
+        response = client.post(
+            "/login",
+            data={"username": "admin", "password": "admin123"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/dashboard")
+    finally:
+        del os.environ["SNAGLIST_APP_USERNAME"]
+        del os.environ["SNAGLIST_APP_PASSWORD"]
 
 
 def test_dashboard_requires_login():

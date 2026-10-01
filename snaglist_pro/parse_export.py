@@ -11,10 +11,10 @@ from typing import List, Dict
 
 logger = logging.getLogger(__name__)
 
-# Matches WhatsApp message start: date, time, sender, message body
+# Matches standard and bracketed WhatsApp message starts.
 _MSG_PATTERN = re.compile(
-    r"^(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}),\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap][Mm])?)\s*-\s*([^:]+?):\s*(.*)",
-    re.MULTILINE,
+    r"^\[?(?P<date>\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})[ \t]*,[ \t]*(?P<time>\d{1,2}:\d{2}(?::\d{2})?(?:[ \t\u202f]*[APap][Mm])?)\]?[ \t]*(?:-[ \t]*)?(?P<sender>[^:\r\n]+):[ \t]*(?P<body>.*?)(?=^\[?\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}[ \t]*,|\Z)",
+    re.MULTILINE | re.DOTALL,
 )
 
 _MEDIA_PATTERN = re.compile(
@@ -31,6 +31,8 @@ _DATE_FORMATS = [
     "%m/%d/%y",
     "%Y/%m/%d",
 ]
+
+_NUMBERED_OBSERVATION_RE = re.compile(r"^\s*\d+[.)]\s+(.+?)\s*$")
 
 
 def _normalize_date(raw_date: str) -> str:
@@ -57,6 +59,14 @@ def extract_media_refs(text: str) -> List[str]:
 
 
 def parse_whatsapp_text(text_content: str) -> List[Dict]:
+    """Parse WhatsApp messages, with grouping support for multi-image snags.
+    
+    When a sender sends multiple images with a single description, WhatsApp lists
+    each image reference on separate lines or messages. This parser detects grouped
+    images by checking if consecutive messages from the same sender have media but no
+    text description—and applies the description from the first image to all subsequent
+    images in the group.
+    """
     if not text_content or not text_content.strip():
         logger.warning("Empty text content provided to parse_whatsapp_text")
         return []
@@ -68,29 +78,64 @@ def parse_whatsapp_text(text_content: str) -> List[Dict]:
 
     records: List[Dict] = []
     for match in matches:
-        date_raw = match.group(1).strip()
-        time_raw = match.group(2).strip()
-        sender = match.group(3).strip()
-        body = match.group(4).strip()
+        date_raw = match.group("date").strip()
+        time_raw = match.group("time").strip()
+        sender = match.group("sender").strip()
+        body = match.group("body").strip()
 
         date_normalized = _normalize_date(date_raw)
-        has_media = bool(_MEDIA_PATTERN.search(body))
-        media_files = extract_media_refs(body)
+        observation_lines = []
+        current_observation = None
+        for line in body.splitlines():
+            numbered_match = _NUMBERED_OBSERVATION_RE.match(line)
+            if numbered_match:
+                if current_observation:
+                    observation_lines.append(current_observation)
+                current_observation = numbered_match.group(1)
+            elif current_observation and line.strip():
+                current_observation = f"{current_observation} {line.strip()}"
+        if current_observation:
+            observation_lines.append(current_observation)
 
-        # Remove the media marker text from the message body for cleanliness
-        clean_body = _MEDIA_PATTERN.sub("", body).strip()
+        message_bodies = observation_lines if len(observation_lines) >= 2 else [body]
+        for message_body in message_bodies:
+            has_media = bool(_MEDIA_PATTERN.search(message_body))
+            media_files = extract_media_refs(message_body)
+            clean_body = _MEDIA_PATTERN.sub("", message_body).strip()
+            records.append({
+                "date": date_normalized,
+                "time": time_raw,
+                "sender": sender,
+                "message": clean_body,
+                "has_media": has_media,
+                "media_files": media_files,
+            })
 
-        records.append({
-            "date": date_normalized,
-            "time": time_raw,
-            "sender": sender,
-            "message": clean_body,
-            "has_media": has_media,
-            "media_files": media_files,
-        })
-
+    # Apply grouped image logic: if a message has media but no text, and the previous
+    # message from the same sender had a description, apply that description to this group.
+    _apply_grouped_image_descriptions(records)
+    
     logger.info("Parsed %d messages from WhatsApp export", len(records))
     return records
+
+
+def _apply_grouped_image_descriptions(records: List[Dict]) -> None:
+    """Apply the first group member's description to all subsequent images from same sender."""
+    for i in range(1, len(records)):
+        curr = records[i]
+        prev = records[i - 1]
+        
+        # If current message has media and same sender as previous, and previous had a description
+        if (
+            curr.get("has_media")
+            and curr.get("sender") == prev.get("sender")
+            and prev.get("message", "").strip()
+            and not curr.get("message", "").strip()
+        ):
+            # Apply previous description to current message
+            curr["message"] = prev.get("message", "")
+            curr["is_grouped_image"] = True
+            logger.debug(f"Applied grouped image description: '{curr['message'][:50]}...'")
 
 
 def extract_media_refs(text: str) -> list:

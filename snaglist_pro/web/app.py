@@ -8,12 +8,13 @@ Launch:
 
 import os
 import sys
+import time
 import uuid
 import json
 import threading
 import zipfile
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Flask, request, jsonify, render_template, send_file, url_for, session, redirect
 
@@ -39,8 +40,11 @@ app = Flask(
     template_folder=_resolve_asset_dir("templates"),
     static_folder=_resolve_asset_dir("static"),
 )
-app.config["SECRET_KEY"] = os.environ.get("SNagLIST_SECRET", "snaglist-pro-dev")
+app.config["SECRET_KEY"] = os.environ.get("SNAGLIST_SECRET", "snaglist-pro-dev")
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 APP_DATA_DIR = get_app_data_dir()
 APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -55,10 +59,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 jobs = {}
 progress = {}
 cancelled = {}
-lock = threading.Lock()
-
-DEFAULT_APP_USER = os.environ.get("SNAGLIST_APP_USERNAME", "admin")
-DEFAULT_APP_PASSWORD = os.environ.get("SNAGLIST_APP_PASSWORD", "admin123")
+lock = threading.RLock()
 
 
 def _is_logged_in():
@@ -69,6 +70,16 @@ def _require_login():
     if not _is_logged_in():
         return redirect("/")
     return None
+
+
+@app.before_request
+def _enforce_session_timeout():
+    if session.get("user"):
+        last = session.get("last_activity")
+        if last and time.time() - last > 1800:
+            session.clear()
+            return redirect("/")
+        session["last_activity"] = time.time()
 
 
 def _cleanup_old_jobs():
@@ -131,14 +142,26 @@ def _run_pipeline(job_id: str, zip_path: str, checklist_path: str | None, output
             settings.max_ai_calls_per_run = original_max_calls
             settings.project_default_client = original_client
             
-    except Exception as exc:
+    except BaseException as exc:
         with lock:
+            cancelled_flag = cancelled.get(job_id)
+            is_cancel = isinstance(exc, KeyboardInterrupt) or cancelled_flag
             jobs[job_id] = {
-                "status": "error",
-                "error": str(exc),
+                "status": "cancelled" if is_cancel else "error",
+                "error": None if is_cancel else str(exc),
                 "finished_at": datetime.now().isoformat(),
             }
-            progress[job_id] = {"step": "error", "message": str(exc), "percent": 0}
+            progress[job_id] = {
+                "step": "cancelled" if is_cancel else "error",
+                "message": "Cancelled by user" if is_cancel else str(exc),
+                "percent": progress.get(job_id, {}).get("percent", 0) if is_cancel else 0,
+            }
+            cancelled.pop(job_id, None)
+
+
+@app.route("/healthz")
+def healthz():
+    return jsonify({"status": "ok"})
 
 
 @app.route("/")
@@ -146,8 +169,11 @@ def _run_pipeline(job_id: str, zip_path: str, checklist_path: str | None, output
 def login_page():
     if request.method == "POST":
         username = (request.form.get("username") or "").strip()
-        password = request.form.get("password") or ""
-        if username == DEFAULT_APP_USER and password == DEFAULT_APP_PASSWORD:
+        password = (request.form.get("password") or "")
+        app_user = os.environ.get("SNAGLIST_APP_USERNAME")
+        app_password = os.environ.get("SNAGLIST_APP_PASSWORD")
+        if app_user and app_password and username == app_user and password == app_password:
+            session.permanent = True
             session["user"] = username
             return redirect("/dashboard")
         return render_template("login.html", error="Invalid username or password."), 401

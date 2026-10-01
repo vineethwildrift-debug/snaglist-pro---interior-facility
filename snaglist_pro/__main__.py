@@ -20,17 +20,38 @@ def main():
         description="Snaglist Pro — Process WhatsApp chat ZIP into formatted snaglist Excel."
     )
     parser.add_argument("--zip", default=None, help="Path to WhatsApp chat export ZIP")
-    parser.add_argument("--checklist", default="C:\\Users\\vinee\\Downloads\\Untitled spreadsheet (2).xlsx", help="Path to checklist XLSX")
+    parser.add_argument("--checklist", default=None, help="Path to checklist XLSX")
     parser.add_argument("--output", default="./output", help="Output directory (default: ./output)")
     parser.add_argument("--project", default=None, help="Project name (optional)")
     parser.add_argument("--web", action="store_true", help="Launch web UI (Flask)")
+    parser.add_argument("--gunicorn", action="store_true", help="Launch web UI with Gunicorn (production)")
     parser.add_argument("--port", type=int, default=5000, help="Web UI port (default: 5000)")
+    parser.add_argument("--host", default="127.0.0.1", help="Web UI bind host (default: 127.0.0.1; use 0.0.0.0 in containers)")
     args = parser.parse_args()
 
     if args.web:
         from snaglist_pro.web.app import app
         init_db()
-        app.run(host="127.0.0.1", port=args.port, debug=False, threaded=True)
+        if args.gunicorn:
+            try:
+                from gunicorn.app.base import BaseApplication
+                class GunicornApp(BaseApplication):
+                    def __init__(self, application, options=None):
+                        self.application = application
+                        self.options = options or {}
+                        super().__init__()
+                    def load_config(self):
+                        for key, value in self.options.items():
+                            if key in self.cfg.settings:
+                                self.cfg.set(key.lower(), value)
+                    def load(self):
+                        return self.application
+                GunicornApp(app, options={"bind": f"{args.host}:{args.port}", "workers": 3, "timeout": 120}).run()
+            except ImportError:
+                print("gunicorn not installed. Install with: pip install gunicorn")
+                app.run(host=args.host, port=args.port, debug=False, threaded=True)
+        else:
+            app.run(host=args.host, port=args.port, debug=False, threaded=True)
         return
 
     if not args.zip:

@@ -1,20 +1,23 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_submodules
-
-hiddenimports = []
-hiddenimports += collect_submodules('snaglist_pro')
 
 
 a = Analysis(
     ['app_launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=hiddenimports,
+    datas=[
+        ('snaglist_pro/web/templates', 'snaglist_pro/web/templates'),
+        ('snaglist_pro/web/static', 'snaglist_pro/web/static'),
+    ],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'torch', 'torchvision', 'tensorflow', 'transformers', 'sklearn', 'scipy',
+        'pandas', 'matplotlib', 'cv2', 'onnxruntime', 'pytest', 'IPython',
+        'sqlalchemy', 'zmq', 'jedi', 'parso', 'notebook', 'nbformat',
+    ],
     noarchive=False,
     optimize=0,
 )
@@ -39,4 +42,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version='file_version_info.txt',
 )

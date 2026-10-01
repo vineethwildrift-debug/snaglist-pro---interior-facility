@@ -18,8 +18,8 @@ def _load_env_file(env_path: Optional[str] = None) -> None:
             key, value = line.split("=", 1)
             key = key.strip()
             value = value.strip().strip('"').strip("'")
-            if key:
-                os.environ[key] = value  # always override
+            if key and key not in os.environ:
+                os.environ[key] = value  # preserve explicit environment overrides
 
 
 _load_env_file()
@@ -63,11 +63,12 @@ def _resolve_database_url(database_url: Optional[str]) -> str:
 
 @dataclass
 class Settings:
-    project_default_facility: str = "ETV"
-    project_default_client: str = "FSINV Global service pvt Ltd"
-    project_default_floor: str = "6F"
+    project_default_facility: str = ""
+    project_default_client: str = ""
+    project_default_floor: str = ""
     project_default_priority: str = "Medium"
     project_default_status: str = "Open"
+    project_output_dir: str = ""
 
     categories_normalize: Dict[str, str] = field(default_factory=lambda: {
         "hvac": "Hvac", "electrical": "Electrical", "interior": "Interior",
@@ -83,12 +84,24 @@ class Settings:
         "unassigned": "Unassigned",
     })
 
+    # Kept in step with the "vendors" map in config.yaml. The packaged exe runs
+    # without config.yaml on disk, so these built-in defaults are the only
+    # source of vendor names there; leaving categories out left Interior,
+    # Cleaning, Parking, Signages, Landscaping, Service and Rodent entry point
+    # blank on the report.
     vendors: Dict[str, str] = field(default_factory=lambda: {
         "Electrical": "Ever green", "Hvac": "Apel (Carrier)",
         "HVAC": "Apel (Carrier)", "Network": "Nikhita",
         "Fire Safety": "V3 automation", "Fire": "V3 automation",
         "Furniture": "Imported & Featherlite",
+        "Interior": "Imported & Featherlite",
+        "Cleaning": "Ever green", "Parking": "Nikhita",
+        "Signages": "V3 automation", "Service": "Ever green",
+        "Landscaping": "Imported & Featherlite", "Civil": "V3 automation",
+        "Plumbing": "Ever green", "Rodent entry point": "Nikhita",
     })
+
+    vendor_overrides: Dict[str, str] = field(default_factory=dict)
 
     priority_high_keywords: List[str] = field(default_factory=lambda: [
         "critical", "urgent", "leak", "fire", "smoke",
@@ -98,6 +111,7 @@ class Settings:
 
     images_resize_size: int = 200
     images_quality: int = 90
+    checklist_default_path: str = ""
 
     database_url: str = field(default_factory=_build_default_database_url)
 
@@ -175,6 +189,7 @@ def _build_settings() -> Settings:
         "project.default_floor": "project_default_floor",
         "project.default_priority": "project_default_priority",
         "project.default_status": "project_default_status",
+        "project.output_dir": "project_output_dir",
         "images.resize_size": "images_resize_size",
         "images.quality": "images_quality",
         "database.url": "database_url",
@@ -187,8 +202,16 @@ def _build_settings() -> Settings:
 
     if "categories" in raw and "normalize" in raw["categories"]:
         kwargs["categories_normalize"] = raw["categories"]["normalize"]
-    if "vendors" in raw:
+    # config.yaml keeps the vendor map under "categories:", so read it from
+    # there first and fall back to a top-level "vendors:" block. Reading only
+    # the top level silently ignored the whole YAML map and left Interior,
+    # Cleaning, Parking, Signages and friends without a vendor.
+    if "categories" in raw and "vendors" in raw["categories"]:
+        kwargs["vendors"] = raw["categories"]["vendors"]
+    elif "vendors" in raw:
         kwargs["vendors"] = raw["vendors"]
+    if "vendor_overrides" in raw:
+        kwargs["vendor_overrides"] = raw["vendor_overrides"]
     if "priority" in raw and "high_keywords" in raw["priority"]:
         kwargs["priority_high_keywords"] = raw["priority"]["high_keywords"]
 

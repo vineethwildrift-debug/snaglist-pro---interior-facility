@@ -82,7 +82,7 @@ PHRASE_FIXES: Dict[str, str] = {
 
 CATEGORY_KEYWORDS: Dict[str, list] = {
     "Electrical": [
-        "earthing", "detector", "electrical", "wiring", "cable", "switch",
+        "earthing", "electrical", "wiring", "cable", "switch",
         "socket", "mcb", "db", "panel", "light", "lighting", "gland",
         "power", "rack", "commissioning", "fan", "exhaust", "conduit",
         "ups", "cctv", "camera", "emergency light", "exit sign",
@@ -90,6 +90,7 @@ CATEGORY_KEYWORDS: Dict[str, list] = {
         "relay", "timer", "dim", "regulator", "inverter", "battery",
         "charger", "stabilizer", "transformer", "busbar", "trunking",
         "heater", " immersion", "geyser", "motor", "starter",
+        "raceway", "cable tray", "screw",
     ],
     "HVAC": [
         "ac", "ahu", "hvac", "duct", "cooling", "outdoor unit", "indoor unit",
@@ -115,7 +116,7 @@ CATEGORY_KEYWORDS: Dict[str, list] = {
         "waterproofing", "damp", "seepage", "brick", "block work",
         "screed", "leveling", "skirting", "cornice", "expansion joint",
         "sealant", "filler", "pop", "plaster of paris", "render",
-        "patch", "repair work",
+        "patch", "repair work", "gap", "rectif", "door", "window",
     ],
     "Fire Safety": [
         "fire", "sprinkler", "extinguisher", "smoke", "hose", "hydrant", "fls",
@@ -136,19 +137,45 @@ CATEGORY_KEYWORDS: Dict[str, list] = {
         "furniture", "workstation", "chair", "table", "cubicle", "cabin",
         "pedestal", "keys", "drawer", "shelf", "cabinet", "locker",
         "sofa", "seating", "bench", "stool", "desk", "credenza",
-        "bookcase", "partition", "counter", "modular furniture",
+        "bookcase", "partition", "counter", "modular furniture", "door",
+        "door handle", "door stopper", "curtain", "glass door",
+        "door closing", "door close", "door alignment",
     ],
     "Interior": [
-        "interior", "door", "window", "partition", "glass", "frame",
+        "interior", "window", "partition", "glass", "frame",
         "paint", "painting", "fascad", "writing board", "wallpaper",
         "cladding", "panel", "veneer", "laminate", "flooring",
         "carpet", "vinyl", "curtain", "blind", "screen",
         "signage", "name board", "display", "acoustic",
+        "skirting", "cornice", "false ceiling", "gypsum",
+        "ceiling", "tile", "floor", "wall", "plaster", "crack",
+        "dust", "shower", "bathtub", "basin", "gap",
     ],
     "Cleaning": [
         "clean", "cleaning", "dust", "dirt", "rubbish", "waste",
         "garbage", "trash", "debris", "sweep", "mop", "scrub",
         "sanitize", "housekeeping", "janitor", "discard", "remove debris",
+        "wash", "washroom", "sanitary", "toilet", "bathroom",
+    ],
+    "Parking": [
+        "parking", "basement", "garage", "car park", "lot", "parking area",
+        "parking marking", "parking number", "parking sign",
+    ],
+    "Signages": [
+        "signage", "sign", "board", "directory", "exit", "way finding",
+        "name board", "display", "fire exit", "exit sign",
+    ],
+    "Service": [
+        "service", "maintenance", "pest", "pest control", "water",
+        "pestcontrol", "pest control", "deep clean", "housekeeping",
+    ],
+    "Landscaping": [
+        "landscape", "garden", "lawn", "plant", "tree", "green area",
+        "planter", "shrub", "landscap", "amc", "warranty",
+    ],
+    "Rodent entry point": [
+        "rodent", "mouse", "rat", "insect", "cockroach", "termite",
+        "hole", "opening", "gap", "crack", "entry",
     ],
 }
 

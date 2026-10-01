@@ -2,11 +2,12 @@
 # Override any value via env var SNAGLIST__{SECTION}__{KEY}
 
 project:
-  default_facility: ETV
-  default_client: FSINV Global service pvt Ltd
-  default_floor: "6F"
+  default_facility: ""
+  default_client: ""
+  default_floor: ""
   default_priority: Medium
   default_status: Open
+  output_dir: ""
 
 categories:
   normalize:
@@ -25,7 +26,7 @@ categories:
     rodent entry point: Rodent entry point
     parking: Parking
     signages: Signages
-    landscapping: Landscapping
+    landscaping: Landscaping
     service: Service
     electrical hod: Electrical HOD
     hvac hod: Hvac HOD
@@ -33,14 +34,45 @@ categories:
     network hod: Network HOD
     unassigned: Unassigned
 
-vendors:
-  Electrical: Ever green
-  Hvac: Apel (Carrier)
-  HVAC: Apel (Carrier)
-  Network: Nikhita
+  vendors:
+    Electrical: Ever green
+    Hvac: Apel (Carrier)
+    HVAC: Apel (Carrier)
+    Network: Nikhita
+    Fire Safety: V3 automation
+    Fire: V3 automation
+    Furniture: Imported & Featherlite
+    Interior: Imported & Featherlite
+    Cleaning: Ever green
+    Parking: Nikhita
+    Signages: V3 automation
+    Service: Ever green
+    Landscaping: Imported & Featherlite
+    Civil: V3 automation
+    Plumbing: Ever green
+    Rodent entry point: Nikhita
+
+vendor_overrides:
+  Electrical: MD Electrical
+  Hvac: IND Aircon
+  Interior: Interior
   Fire Safety: V3 automation
-  Fire: V3 automation
+  Network: Nikhita
   Furniture: Imported & Featherlite
+  Cleaning: Ever green
+  Parking: Nikhita
+  Signages: V3 automation
+  Service: Service team
+  Landscaping: Builder
+  Civil: V3 automation
+  Plumbing: Ever green
+  Rodent entry point: Nikhita
+  Electrical HOD: MD Electrical
+  Hvac HOD: IND Aircon
+  Fire Safety HOD: V3 automation
+  Network HOD: Nikhita
+  Client scope: Client scope
+  Unassigned: TBD
 
 priority:
   high_keywords:
@@ -64,3 +96,46 @@ checklist:
 images:
   resize_size: 200
   quality: 90
+
+# ---------------------------------------------------------------------------
+# Licensing (Option A: offline-verifiable Ed25519 signed tokens)
+#
+# The application ships with the OWNER'S PUBLIC KEY only. The private key
+# stays on the owner's machine and is used solely by the issuer CLI
+# (`python -m snaglist_pro.licensing`). A license token is a signed JSON
+# envelope verified against the embedded public key, so it cannot be forged
+# without the private key.
+#
+#   1. Owner generates a keypair:
+#        python -m snaglist_pro.licensing gen-keypair \
+#            --private license.priv --public license.pub
+#   2. Owner issues a token for a customer (valid for --lease-days, default 30):
+#        python -m snaglist_pro.licensing issue \
+#            --license-id LIC-001 --customer "Acme Corp" --edition Pro \
+#            --features "pro,excel,google_sheets" \
+#            --private license.priv --output LIC-001.lic
+#   3. Operator installs the token on the customer's machine:
+#        copy LIC-001.lic into the license directory, then run with
+#        --license-check. The token is stored in the OS credential store.
+#
+# The client re-validates on every run, defends against clock rollback with a
+# monotonic watermark, allows a 7-day offline grace window, and locks new
+# report generation when the license expires. Reading or exporting
+# already-produced data is never gated.
+# ---------------------------------------------------------------------------
+
+licensing:
+  # Path to the owner's PUBLIC key shipped with the client.
+  public_key: ""
+  # Directory holding the installed token, watermark and attempt state.
+  state_dir: ""
+  # Token validity in days (lease). Short leases make revocation effective
+  # within one cycle.
+  lease_days: 30
+  # How long a valid token may be used without re-validation before
+  # generation is locked.
+  grace_days: 7
+  # Maximum activations per license.
+  max_activations: 2
+  # Feature tags included in the license (empty = no feature restrictions).
+  features: []

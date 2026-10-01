@@ -88,11 +88,17 @@ def add_summary_sheet(wb: Workbook, stats: dict, data_sheet: str = "") -> None:
     ws.cell(row=4, column=2).alignment = _CENTER
     ws.cell(row=4, column=2).border = _THIN_BORDER
 
+    unmatched_snags = stats.get("unmatched_snags", 0)
+
     metrics_data = [
         ("Total Snags", total, False),
         ("Matched", matched, False),
         ("Unmatched", unmatched, False),
-        ("Match Rate", f"={matched}/{total}%" if total else "0%", True),
+        ("Unmatched Snags", unmatched_snags, False),
+        # B6 = Matched, B7 = Unmatched (checklist rows with no snag), B8 =
+        # Unmatched Snags (chat snags with no checklist match). Match rate is
+        # matched / (matched + unmatched); B7 is the missing term.
+        ("Match Rate", "=B6/(B6+B7)" if (matched + unmatched) > 0 else 0, True),
         ("Open", open_count, False),
         ("Closed", closed_count, False),
     ]
@@ -160,9 +166,13 @@ def add_summary_sheet(wb: Workbook, stats: dict, data_sheet: str = "") -> None:
         r = cat_row + i
         ws.cell(row=r, column=1, value=name)
         ws.cell(row=r, column=2, value=count)
-        ws.cell(row=r, column=3, value=f"=B{r}/{total}%")
+        ws.cell(row=r, column=3, value=f"=B{r}/$B$5")
         ws.cell(row=r, column=3).number_format = "0%"
         _style_body(ws, r, 1, 3)
+
+    if not categories:
+        ws.cell(row=cat_row, column=1, value="No categories").font = _BODY_FONT
+        ws.cell(row=cat_row, column=1).border = _THIN_BORDER
 
     if categories:
         chart_bar = BarChart()

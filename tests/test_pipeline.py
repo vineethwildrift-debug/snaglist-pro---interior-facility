@@ -10,6 +10,7 @@ from snaglist_pro.pipeline import (
     match_to_checklist,
     determine_priority,
     get_vendor,
+    load_checklist,
     SnaglistPipeline,
 )
 
@@ -124,6 +125,38 @@ class TestGetVendor:
 
     def test_empty(self):
         assert get_vendor("") == ""
+
+
+class TestLoadChecklist:
+    def test_skips_header_subheader_rows(self, tmp_path):
+        import openpyxl
+
+        xlsx_path = str(tmp_path / "checklist.xlsx")
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws["A1"] = "Slno"
+        ws["G1"] = "Catagory"
+        ws["H1"] = "Check points"
+        ws["K1"] = "Priority"
+        ws["A2"] = "Snagpoints"
+        ws["G2"] = "Catagory"
+        ws["H2"] = "Check Points"
+        ws["K2"] = "Priority"
+        ws["A3"] = 1
+        ws["G3"] = "Interior"
+        ws["H3"] = "Window to be rectified"
+        ws["K3"] = "Medium"
+        ws["A4"] = 2
+        ws["G4"] = "Civil"
+        ws["H4"] = "Damaged tiles"
+        ws["K4"] = "High"
+        wb.save(xlsx_path)
+
+        items = load_checklist(xlsx_path)
+        assert len(items) == 2
+        categories = [i["category"] for i in items]
+        assert "Catagory" not in categories
+        assert categories == ["Interior", "Civil"]
 
 
 class TestSnaglistPipeline:
