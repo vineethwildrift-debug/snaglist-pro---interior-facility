@@ -1,5 +1,7 @@
 import os
 import re
+import sys
+import logging
 import yaml
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -103,6 +105,12 @@ class Settings:
 
     vendor_overrides: Dict[str, str] = field(default_factory=dict)
 
+    # When False (default) the general "vendors" map wins and vendor_overrides
+    # only fills categories it does not cover. Set True in config.yaml to make
+    # vendor_overrides authoritative, which is what a project using that table
+    # for per-site vendor names wants.
+    vendor_overrides_win: bool = False
+
     priority_high_keywords: List[str] = field(default_factory=lambda: [
         "critical", "urgent", "leak", "fire", "smoke",
         "short circuit", "hazard", "not working", "broken",
@@ -168,14 +176,43 @@ class Settings:
         return False
 
 def _load_config_yaml() -> dict:
-    paths = [
-        os.path.join(os.path.dirname(__file__), "..", "config.yaml"),
-        os.path.join(os.path.dirname(__file__), "..", "config.yml"),
-    ]
-    for path in paths:
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
+    """Find config.yaml next to the package, beside the frozen exe, or bundled.
+
+    Order matters: a config.yaml sitting next to the executable (or in the
+    working directory) is the operator's own file and wins over the copy
+    bundled into the build. Previously a frozen build looked only inside its own
+    package directory, never found anything, and silently ran on the built-in
+    defaults - which is why editing a vendor name appeared to do nothing until
+    the app was rebuilt.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable)) if getattr(sys, "frozen", False) else None
+
+    roots = []
+    if exe_dir:
+        roots.append(exe_dir)
+    roots.append(os.getcwd())
+    roots.append(os.path.dirname(here))
+    if bundle_root:
+        roots.append(bundle_root)
+
+    candidates = []
+    for root in roots:
+        candidates.append(os.path.join(root, "config.yaml"))
+        candidates.append(os.path.join(root, "config.yml"))
+    for root in (here, bundle_root):
+        if root:
+            candidates.append(os.path.join(root, "config.yaml"))
+            candidates.append(os.path.join(root, "config.yml"))
+
+    for path in candidates:
+        if os.path.isfile(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    return yaml.safe_load(f) or {}
+            except Exception as exc:  # a broken file must not stop the app
+                logging.warning("Ignoring unreadable config %s: %s", path, exc)
     return {}
 
 
@@ -212,6 +249,8 @@ def _build_settings() -> Settings:
         kwargs["vendors"] = raw["vendors"]
     if "vendor_overrides" in raw:
         kwargs["vendor_overrides"] = raw["vendor_overrides"]
+    if "vendor_overrides_win" in raw:
+        kwargs["vendor_overrides_win"] = bool(raw["vendor_overrides_win"])
     if "priority" in raw and "high_keywords" in raw["priority"]:
         kwargs["priority_high_keywords"] = raw["priority"]["high_keywords"]
 

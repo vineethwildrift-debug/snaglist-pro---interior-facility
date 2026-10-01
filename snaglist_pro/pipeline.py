@@ -202,17 +202,95 @@ def _vendor_override(category: str) -> str:
     return ov.get(category, "")
 
 
-def _resolve_vendor(category: str) -> str:
-    """Vendor for a category, general vendors map first.
+# Captions that assert no defect and no outstanding work. These are progress
+# notes or bare location labels on photos, and turning them into report rows
+# would claim defects nobody reported.
+_FILLER_CAPTIONS = {
+    "present project status",
+    "project status",
+    "present status",
+    "cafetaria status",
+    "cafeteria status",
+    "site status",
+    "progress photo",
+    "garbage yard",
+    "garbage area",
+}
 
-    vendor_overrides is looked up first in name only, but the values in
-    config.yaml are another site's vendor names (MD Electrical, IND Aircon) and
-    placeholder labels (Interior: Interior, Service: Service team), so letting
-    them win renamed vendors that were already correct. The general map is now
-    authoritative and the override table only fills categories it does not
-    cover, which is what actually used to happen in the packaged build where
-    config.yaml is absent and the override table is empty.
+# Words that indicate the caption is actually saying something is wrong or
+# outstanding. A short caption containing none of these is a label, not a snag.
+_DEFECT_WORDS = {
+    "damaged", "damage", "broken", "break", "crack", "cracked", "leak", "leaking",
+    "leakage", "seepage", "seep", "missing", "not", "pending", "required", "need",
+    "needs", "needed", "required", "install", "installed", "installation", "fix",
+    "fixing", "fixed", "repair", "replace", "replaced", "replacement", "remove",
+    "removed", "clean", "cleaning", "clear", "cleared", "provide", "provided",
+    "pending", "to", "be", "should", "must", "issue", "issues", "wrong", "loose",
+    "loosed", "uneven", "unfinished", "incomplete", "pending", "blocked", "stopped",
+    "non", "functioning", "working", "finish", "finishing", "open", "exposed",
+    "expose", "uncovered", "untidy", "dust", "dusty", "water", "paint", "painting",
+    "tiling", "tile", "grout", "gap", "hole", "rust", "stain", "stained", "mark",
+    "marks", "align", "alignment", "level", "loose", "gap", "gap", "gap",
+    "mismatch", "wrong", "incorrect", "error", "fault", "faulty", "defect",
+    "reject", "rejected", "hold", "pending", "awaiting", "delay", "delayed",
+    # Nouns that name a defect type on their own. Without these a caption such
+    # as "Rodent points" or "Rodent entry point" reads as a bare location
+    # label and would be dropped, even though rodent-proofing is a real snag
+    # category.
+    "rodent", "rodents", "termite", "termites", "waterproofing", "waterproof",
+    "sealing", "sealant", "leakproofing", "insulation", "cladding", "grouting",
+}
+
+
+def _normalize_caption(text: str) -> str:
+    return re.sub(r"[^a-z0-9 ]+", " ", (text or "").lower()).strip()
+
+
+def is_filler_caption(text: str) -> bool:
+    """True when a photo caption reports no defect and no outstanding work.
+
+    Two tests, both deliberately conservative so a real snag is never lost:
+
+    1. The caption is in the explicit blocklist above (a progress note such as
+       "Present project status").
+    2. The caption is three words or fewer and contains no defect vocabulary -
+       a bare label like "Fire pump room" or "Transformer yard".
+
+    Longer captions always pass. This exists because fixing the dropped-snags
+    bug also let through captions that only became visible once nothing was
+    being thrown away.
     """
+    norm = _normalize_caption(text)
+    if not norm:
+        return False
+    if norm in _FILLER_CAPTIONS:
+        return True
+    words = norm.split()
+    if len(words) > 3:
+        return False
+    return not any(w in _DEFECT_WORDS for w in words)
+
+
+def _resolve_vendor(category: str) -> str:
+    """Vendor for a category, with the precedence between the two tables explicit.
+
+    config.yaml carries both a general "vendors" map and a "vendor_overrides"
+    table. The values currently sitting in vendor_overrides belong to a
+    different site ("MD Electrical", "IND Aircon") and include placeholder
+    labels ("Interior: Interior", "Service: Service team"), so letting them win
+    by name alone renamed vendors that were already correct.
+
+    The order is therefore driven by config, not hardcoded, so a project that
+    really does use vendor_overrides per-site can set:
+
+        vendor_overrides_win: true      # overrides beat the general map
+
+    and get the original behaviour back without a code change. The default
+    matches what the packaged build did anyway, where config.yaml is absent and
+    the override table is empty.
+    """
+    if settings.vendor_overrides_win:
+        return _vendor_override(category) or get_vendor(category)
     return get_vendor(category) or _vendor_override(category)
 
 CLOSED_KEYWORDS = [
@@ -1651,32 +1729,47 @@ def build_excel(
 
     try:
         from snaglist_pro.summary_dashboard import add_summary_sheet
+        # Dashboard metrics describe the snags that were actually found, not the
+        # checklist questions that were printed with nothing against them. Every
+        # checklist row with no snag is still emitted (that is what shows the
+        # client what was looked for and not found), so counting rows reported
+        # Open Snags = Total Snags = 409 on a 288-snag export. Column 10 holds
+        # the Snag Points text, so it identifies the snag rows exactly.
         vendor_counts = Counter()
         priority_counts = Counter()
-        for row in ws.iter_rows(min_row=8, max_row=row_num - 1, min_col=16, max_col=16, values_only=True):
-            v = row[0]
-            if v:
-                vendor_counts[v] += 1
-        for row in ws.iter_rows(min_row=8, max_row=row_num - 1, min_col=11, max_col=11, values_only=True):
-            p = row[0]
-            if p:
-                priority_counts[p] += 1
+        category_counts = Counter()
         open_count = 0
         closed_count = 0
-        for row in ws.iter_rows(min_row=8, max_row=row_num - 1, min_col=9, max_col=9, values_only=True):
-            status = row[0]
+        snag_row_count = 0
+        for r in range(8, row_num):
+            if not str(ws.cell(row=r, column=10).value or "").strip():
+                continue
+            snag_row_count += 1
+            v = ws.cell(row=r, column=16).value
+            if v:
+                vendor_counts[v] += 1
+            p = ws.cell(row=r, column=11).value
+            if p:
+                priority_counts[p] += 1
+            c = ws.cell(row=r, column=7).value
+            if c:
+                category_counts[c] += 1
+            status = ws.cell(row=r, column=9).value
             if status == "Open":
                 open_count += 1
             elif status == "Closed":
                 closed_count += 1
         summary_stats = {
-            "total": row_num - 8,
+            "total": snag_row_count,
+            "total_rows": row_num - 8,
             "matched": matched_count,
             "unmatched": unmatched_checklist + unmatched_snag_count,
+            "unmatched_checklist": unmatched_checklist,
             "unmatched_snags": unmatched_snag_count,
+            "checklist_items": len(checklist_items),
             "open": open_count,
             "closed": closed_count,
-            "categories": dict(stats),
+            "categories": dict(category_counts),
             "priorities": dict(priority_counts),
             "vendors": dict(vendor_counts),
         }
@@ -1973,6 +2066,18 @@ class SnaglistPipeline:
         snags = deduplicate_snags(snags)
         logging.info("  %d unique snags after dedup", len(snags))
         _progress("dedup", f"{len(snags)} unique snags", 45)
+
+        # Drop photos captioned only with a progress note or a bare location
+        # label. Done here rather than inside build_excel so that len(snags) -
+        # the count the UI, the progress bar, snag_data.json and the saved
+        # report all use - agrees with the rows actually written.
+        before_filler = len(snags)
+        snags = [s for s in snags if not is_filler_caption(s.get("description", ""))]
+        filler_dropped = before_filler - len(snags)
+        if filler_dropped:
+            logging.info("  %d photo(s) captioned only with a progress note or "
+                         "location label, not snag points", filler_dropped)
+            _progress("filler", f"{len(snags)} snags after removing filler captions", 50)
 
         logging.info("=" * 50)
         logging.info("STEP 4: DEDUPLICATE BY PHASH")

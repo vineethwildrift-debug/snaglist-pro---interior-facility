@@ -8,6 +8,10 @@ a = Analysis(
     datas=[
         ('snaglist_pro/web/templates', 'snaglist_pro/web/templates'),
         ('snaglist_pro/web/static', 'snaglist_pro/web/static'),
+        # Bundled as a fallback so a frozen build reads the same defaults as the
+        # source tree. config.py prefers a config.yaml placed next to the exe,
+        # so operators can still change vendors without a rebuild.
+        ('config.yaml', '.'),
     ],
     hiddenimports=[],
     hookspath=[],

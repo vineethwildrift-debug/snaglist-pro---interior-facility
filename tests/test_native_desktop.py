@@ -260,18 +260,51 @@ def test_summary_dashboard_uses_cell_references_for_percentages():
     workbook = Workbook()
     add_summary_sheet(
         workbook,
-        {"total": 10, "matched": 4, "unmatched": 6, "unmatched_snags": 2, "open": 10, "closed": 0,
-         "categories": {"Electrical": 10}, "priorities": {"Medium": 10}, "vendors": {}},
+        {"total": 10, "total_rows": 16, "matched": 8, "unmatched": 6, "unmatched_snags": 2,
+         "unmatched_checklist": 4, "checklist_items": 14,
+         "open": 9, "closed": 1,
+         "categories": {"Electrical": 6, "Hvac": 4}, "priorities": {"Medium": 10}, "vendors": {}},
         data_sheet="Snaglist",
     )
 
     summary = workbook["Summary"]
 
-    # B6 = Matched, B7 = Unmatched, B8 = Unmatched Snags. Match rate is
-    # matched / (matched + unmatched); using B8 here reported 67% instead of
-    # the real 40% for these inputs.
+    # B6 = Matched, B7 = Unmatched Snags. Match rate is matched /
+    # (matched + unmatched snags); pointing at the wrong cell reported 80%
+    # instead of the real 8/(8+2) for these inputs.
     assert summary["B9"].value == "=B6/(B6+B7)"
-    assert summary["C14"].value == "=B14/$B$5"
+    # Category block starts below the nine Key Metrics rows; percentages divide
+    # by Total Snags, not by the number of printed report rows.
+    assert summary["C18"].value == "=B18/$B$5"
+    assert summary["C18"].number_format == "0%"
+
+
+def test_summary_reports_snags_not_checklist_placeholder_rows():
+    """Total Snags must exclude checklist rows that had nothing reported."""
+    from openpyxl import Workbook
+    from snaglist_pro.summary_dashboard import add_summary_sheet
+
+    workbook = Workbook()
+    add_summary_sheet(
+        workbook,
+        {"total": 10, "total_rows": 16, "matched": 8, "unmatched": 6, "unmatched_snags": 2,
+         "unmatched_checklist": 4, "checklist_items": 14,
+         "open": 9, "closed": 1,
+         "categories": {"Electrical": 10}, "priorities": {"Medium": 10}, "vendors": {}},
+        data_sheet="Snaglist",
+    )
+    summary = workbook["Summary"]
+
+    assert summary["A5"].value == "Total Snags"
+    assert summary["B5"].value == 10
+    assert summary["A12"].value == "Checklist Items With No Snag"
+    assert summary["B12"].value == 4
+    assert summary["A13"].value == "Report Rows Printed"
+    assert summary["B13"].value == 16
+    # Open + Closed covers the snags, not every printed row.
+    assert summary["B10"].value + summary["B11"].value == summary["B5"].value
+    # Status Overview counts only rows that carry a Snag Points entry.
+    assert summary["E5"].value == '=COUNTIFS(\'Snaglist\'!I8:I23,"Open",\'Snaglist\'!J8:J23,"<>")'
 
 
 def test_summary_sheet_open_closed_counts_reflect_actual_data(sample_checklist_path, output_dir):
@@ -325,9 +358,16 @@ def test_summary_sheet_open_closed_counts_reflect_actual_data(sample_checklist_p
             break
     assert data_ws is not None
 
+    # Open/Closed on the dashboard describe snags, so count only the rows that
+    # actually carry a Snag Points entry. Checklist rows printed with nothing
+    # against them are a separate metric ("Checklist Items With No Snag").
     actual_open = 0
     actual_closed = 0
+    snag_rows = 0
     for row in data_ws.iter_rows(min_row=8, values_only=True):
+        if not str(row[9] or "").strip():
+            continue
+        snag_rows += 1
         status = row[8]
         if status == "Open":
             actual_open += 1
@@ -335,6 +375,7 @@ def test_summary_sheet_open_closed_counts_reflect_actual_data(sample_checklist_p
             actual_closed += 1
 
     summary = wb["Summary"]
+    assert summary["B5"].value == snag_rows
     assert summary["B10"].value == actual_open
     assert summary["B11"].value == actual_closed
     assert summary["B10"].value + summary["B11"].value == summary["B5"].value
@@ -494,6 +535,124 @@ def test_report_vendor_is_resolved_for_every_category(sample_checklist_path, out
     rows = list(data_ws.iter_rows(min_row=8, values_only=True))
     assert rows
     assert all(row[15] for row in rows), "every category should resolve a vendor"
+
+
+def test_filler_captions_are_not_treated_as_snags():
+    """Progress notes and bare location labels must not become report rows."""
+    from snaglist_pro.pipeline import is_filler_caption
+
+    for text in [
+        "Present project status",
+        "cafetaria status",
+        "Garbage yard",
+        "Fire pump room",
+        "Transformer yard",
+        "HVAC plant room",
+        "Passenger lift",
+        "Main lift lobby",
+        "Entry exit",
+        "Basement 2",
+    ]:
+        assert is_filler_caption(text) is True, text
+
+    # Anything that names a defect or outstanding work must survive, however
+    # short it is, and longer captions always pass.
+    for text in [
+        "Finishing required",
+        "Damaged tiles",
+        "Water leakage",
+        "Megger testing pending",
+        "Cable tray missing",
+        "Basement 2 parking place",
+        "Manager bye area uneven floor to be rectifiy",
+        "Window to be rectified",
+    ]:
+        assert is_filler_caption(text) is False, text
+
+
+def test_filler_photos_do_not_reach_the_report(sample_checklist_path, output_dir):
+    import os
+    import tempfile
+    import zipfile
+    from openpyxl import load_workbook
+    from snaglist_pro.pipeline import SnaglistPipeline
+
+    tmp_dir = tempfile.mkdtemp()
+    _build_report(
+        tmp_dir,
+        [
+            "Window to be rectified",
+            "Present project status",
+            "Damaged tiles to be replaced",
+        ],
+    )
+    zip_path = os.path.join(tmp_dir, "Filler.zip")
+    extract_dir = os.path.join(tmp_dir, "extracted")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(extract_dir):
+            for fname in files:
+                fpath = os.path.join(root, fname)
+                zf.write(fpath, os.path.relpath(fpath, extract_dir))
+
+    result = SnaglistPipeline().run(
+        zip_path=zip_path,
+        checklist_path=sample_checklist_path,
+        output_dir=output_dir,
+        fast_mode=True,
+    )
+    assert result["total_snags"] == 2
+    wb = load_workbook(result["excel_path"])
+    data_ws = next(w for w in wb.worksheets if w.title not in ("Summary", "Correction Notes"))
+    reported = [r[9] for r in data_ws.iter_rows(min_row=8, values_only=True) if r[9]]
+    assert not any("project status" in str(t).lower() for t in reported)
+
+
+def test_vendor_precedence_is_configurable():
+    """vendor_overrides can be made authoritative without a code change."""
+    from snaglist_pro import config as config_module
+    from snaglist_pro import pipeline as pipeline_module
+
+    original = config_module.settings
+    try:
+        config_module.settings = pipeline_module.settings = type(original)(
+            vendors={"Electrical": "General Vendor"},
+            vendor_overrides={"Electrical": "Override Vendor"},
+            vendor_overrides_win=False,
+        )
+        assert pipeline_module._resolve_vendor("Electrical") == "General Vendor"
+
+        config_module.settings = pipeline_module.settings = type(original)(
+            vendors={"Electrical": "General Vendor"},
+            vendor_overrides={"Electrical": "Override Vendor"},
+            vendor_overrides_win=True,
+        )
+        assert pipeline_module._resolve_vendor("Electrical") == "Override Vendor"
+    finally:
+        config_module.settings = pipeline_module.settings = original
+
+
+def test_frozen_build_prefers_a_config_next_to_the_executable(tmp_path, monkeypatch):
+    """config.yaml beside the exe must win, so vendors need no rebuild."""
+    import sys
+    from snaglist_pro.config import _load_config_yaml
+
+    bundled = tmp_path / "bundled"
+    bundled.mkdir()
+    (bundled / "config.yaml").write_text("vendors:\n  Electrical: Bundled Vendor\n", encoding="utf-8")
+
+    beside_exe = tmp_path / "exe_dir"
+    beside_exe.mkdir()
+    (beside_exe / "config.yaml").write_text(
+        "vendors:\n  Electrical: Operator Vendor\n", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(sys, "_MEIPASS", str(bundled), raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(beside_exe / "SnaglistPro.exe"))
+    monkeypatch.chdir(tmp_path)
+
+    loaded = _load_config_yaml()
+    assert loaded["vendors"]["Electrical"] == "Operator Vendor"
 
 
 def test_pipeline_parser_supports_bracketed_whatsapp_headers():

@@ -59,6 +59,7 @@ def add_summary_sheet(wb: Workbook, stats: dict, data_sheet: str = "") -> None:
     ref = f"'{data_sheet}'" if data_sheet else "Sheet1"
 
     total = stats.get("total", 0)
+    total_rows = stats.get("total_rows", total)
     matched = stats.get("matched", 0)
     unmatched = stats.get("unmatched", 0)
     open_count = stats.get("open", 0)
@@ -67,8 +68,12 @@ def add_summary_sheet(wb: Workbook, stats: dict, data_sheet: str = "") -> None:
     priorities: Dict = stats.get("priorities", {})
     vendors: Dict = stats.get("vendors", {})
 
-    last_data_row = 7 + total
+    last_data_row = 7 + total_rows
     status_range = f"{ref}!I8:I{last_data_row}" if data_sheet else f"I8:I{last_data_row}"
+    # Column J holds the Snag Points text. Restricting the counts to rows that
+    # have one keeps "Open"/"Closed" describing real snags instead of also
+    # counting checklist questions that had nothing reported against them.
+    snag_range = f"{ref}!J8:J{last_data_row}" if data_sheet else f"J8:J{last_data_row}"
 
     ws.merge_cells("A1:H1")
     ws["A1"].value = "Snaglist Summary Dashboard"
@@ -89,18 +94,25 @@ def add_summary_sheet(wb: Workbook, stats: dict, data_sheet: str = "") -> None:
     ws.cell(row=4, column=2).border = _THIN_BORDER
 
     unmatched_snags = stats.get("unmatched_snags", 0)
+    checklist_items = stats.get("checklist_items", 0)
+    unmatched_checklist = stats.get("unmatched_checklist", max(unmatched - unmatched_snags, 0))
 
+    # Row map (the Match Rate formula and the category percentages key off
+    # these cells):
+    #   B5 Total Snags   B6 Matched   B7 Unmatched Snags   B8 Checklist Items
+    #   B9 Match Rate    B10 Open     B11 Closed
     metrics_data = [
         ("Total Snags", total, False),
-        ("Matched", matched, False),
-        ("Unmatched", unmatched, False),
+        ("Matched to Checklist", matched, False),
         ("Unmatched Snags", unmatched_snags, False),
-        # B6 = Matched, B7 = Unmatched (checklist rows with no snag), B8 =
-        # Unmatched Snags (chat snags with no checklist match). Match rate is
-        # matched / (matched + unmatched); B7 is the missing term.
-        ("Match Rate", "=B6/(B6+B7)" if (matched + unmatched) > 0 else 0, True),
+        ("Checklist Items", checklist_items or total_rows, False),
+        # Match rate is matched / (matched + unmatched snags) - the share of
+        # extracted snags that the checklist accounted for.
+        ("Match Rate", "=B6/(B6+B7)" if (matched + unmatched_snags) > 0 else 0, True),
         ("Open", open_count, False),
         ("Closed", closed_count, False),
+        ("Checklist Items With No Snag", unmatched_checklist, False),
+        ("Report Rows Printed", total_rows, False),
     ]
     for i, (label, val, is_formula) in enumerate(metrics_data):
         r = 5 + i
@@ -131,8 +143,8 @@ def add_summary_sheet(wb: Workbook, stats: dict, data_sheet: str = "") -> None:
     ws.cell(row=4, column=5).border = _THIN_BORDER
 
     status_formulas = [
-        ("Open", f'=COUNTIF({status_range},"Open")'),
-        ("Closed", f'=COUNTIF({status_range},"Closed")'),
+        ("Open", f'=COUNTIFS({status_range},"Open",{snag_range},"<>")'),
+        ("Closed", f'=COUNTIFS({status_range},"Closed",{snag_range},"<>")'),
     ]
     for i, (label, formula) in enumerate(status_formulas):
         r = 5 + i
@@ -143,7 +155,7 @@ def add_summary_sheet(wb: Workbook, stats: dict, data_sheet: str = "") -> None:
         ws.cell(row=r, column=5).border = _THIN_BORDER
         ws.cell(row=r, column=5).alignment = _CENTER
 
-    cat_start = 12
+    cat_start = 16  # clears the nine Key Metrics rows (5-13)
     ws.merge_cells(f"A{cat_start}:E{cat_start}")
     ws.cell(row=cat_start, column=1, value="Category Distribution").font = _SECTION_FONT
 
