@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(2, 0, 1, 0),
-    prodvers=(2, 0, 1, 0),
+    filevers=(2, 0, 3, 0),
+    prodvers=(2, 0, 3, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x4,
@@ -15,11 +15,11 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('CompanyName', 'vineeth.raghu@indiqube.com'),
          StringStruct('FileDescription', 'Snaglist Pro'),
-         StringStruct('FileVersion', '2.0.1'),
+         StringStruct('FileVersion', '2.0.3'),
          StringStruct('InternalName', 'SnaglistPro'),
          StringStruct('OriginalFilename', 'SnaglistPro.exe'),
          StringStruct('ProductName', 'Snaglist Pro'),
-         StringStruct('ProductVersion', '2.0.1')]
+         StringStruct('ProductVersion', '2.0.3')]
       )]
     ),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

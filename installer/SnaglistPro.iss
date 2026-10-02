@@ -1,9 +1,9 @@
 ; Inno Setup Script
-; Compile with: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /O"output" "installer\SnaglistPro.iss"
+; Compile with: build_installer.bat (locates ISCC.exe automatically)
 
 [Setup]
 AppName=Snaglist Pro
-AppVersion=2.0.0
+AppVersion=2.0.3
 AppPublisher=vineeth.raghu@indiqube.com
 AppPublisherURL=mailto:vineeth.raghu@indiqube.com
 AppSupportURL=mailto:vineeth.raghu@indiqube.com
