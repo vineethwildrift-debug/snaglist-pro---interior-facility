@@ -27,7 +27,7 @@ from openpyxl.utils import get_column_letter
 from PIL import Image as PILImage
 
 from snaglist_pro.config import settings
-from snaglist_pro.parse_export import parse_whatsapp_text
+from snaglist_pro.conversational_filter import is_conversational
 from snaglist_pro.image_processor import resize_to_200
 from snaglist_pro.description_enhancer import ACRONYMS, enhance_description, guess_category, guess_area
 from snaglist_pro.ai_client import (
@@ -2089,24 +2089,32 @@ class SnaglistPipeline:
             _progress("phash", f"{len(snags)} snags (fast mode)", 55)
 
         logging.info("=" * 50)
-        logging.info("STEP 5: LOAD CHECKLIST")
+        logging.info("STEP 5: DROP CONVERSATIONAL NON-SNAGS")
+        before_conv = len(snags)
+        snags = [s for s in snags if not is_conversational(s.get("description", ""))]
+        if before_conv - len(snags):
+            logging.info("  Dropped %d chatter/acknowledgement caption(s)", before_conv - len(snags))
+        _progress("filter", f"{len(snags)} snags after dropping chatter", 57)
+
+        logging.info("=" * 50)
+        logging.info("STEP 6: LOAD CHECKLIST")
         checklist_items = load_checklist(checklist_path)
         _progress("checklist", f"Loaded {len(checklist_items)} checklist items", 60)
 
         logging.info("=" * 50)
-        logging.info("STEP 6: RESIZE IMAGES")
+        logging.info("STEP 7: RESIZE IMAGES")
         resized_map = resize_snag_images(snags, output_dir)
         logging.info("  Resized %d images", len(resized_map))
         _progress("resize", f"Resized {len(resized_map)} images", 70)
 
         logging.info("=" * 50)
-        logging.info("STEP 7: COLLECT ATTACHMENT METADATA")
+        logging.info("STEP 8: COLLECT ATTACHMENT METADATA")
         attachment_entries = gather_attachment_entries(messages, attachment_map)
         logging.info("  Collected %d attachment entries", len(attachment_entries))
         _progress("attachments", "Collected attachments", 75)
 
         logging.info("=" * 50)
-        logging.info("STEP 8: BUILD EXCEL")
+        logging.info("STEP 9: BUILD EXCEL")
         _progress("excel", "Building Excel...", 80)
         excel_name = f"{slugify_project(project_name)}.xlsx"
         excel_path = os.path.join(output_dir, excel_name)

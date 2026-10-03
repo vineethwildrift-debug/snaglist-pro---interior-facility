@@ -4,10 +4,13 @@ snaglist_pro.parse_export — WhatsApp Chat Export Parser
 Parses WhatsApp chat export text into structured snag records.
 """
 
+import os
 import re
 import logging
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
+
+from snaglist_pro.conversational_filter import classify as _classify_snag
 
 logger = logging.getLogger(__name__)
 
@@ -45,20 +48,7 @@ def _normalize_date(raw_date: str) -> str:
     return raw_date
 
 
-def extract_media_refs(text: str) -> List[str]:
-    refs: List[str] = []
-    for match in _MEDIA_PATTERN.finditer(text):
-        groups = match.groups()
-        if groups[0]:
-            refs.append(groups[0].strip())
-        elif groups[1]:
-            refs.append(groups[1].strip())
-        else:
-            refs.append("<Media omitted>")
-    return refs
-
-
-def parse_whatsapp_text(text_content: str) -> List[Dict]:
+def parse_whatsapp_text(text_content: str, classify_conversations: Optional[bool] = None) -> List[Dict]:
     """Parse WhatsApp messages, with grouping support for multi-image snags.
     
     When a sender sends multiple images with a single description, WhatsApp lists
@@ -66,6 +56,11 @@ def parse_whatsapp_text(text_content: str) -> List[Dict]:
     images by checking if consecutive messages from the same sender have media but no
     text description—and applies the description from the first image to all subsequent
     images in the group.
+
+    If ``classify_conversations`` is True, each record is annotated with
+    ``is_snag`` and ``confidence`` using :func:`snaglist_pro.conversational_filter.classify`.
+    Defaults to the ``SNAGLIST_CLASSIFY_CONVERSATIONS`` env var (off by default to
+    keep parsing fast and offline-safe).
     """
     if not text_content or not text_content.strip():
         logger.warning("Empty text content provided to parse_whatsapp_text")
@@ -75,6 +70,10 @@ def parse_whatsapp_text(text_content: str) -> List[Dict]:
     if not matches:
         logger.warning("No WhatsApp messages found in text")
         return []
+
+    if classify_conversations is None:
+        classify_conversations = os.environ.get("SNAGLIST_CLASSIFY_CONVERSATIONS", "").lower() in ("1", "true", "yes")
+    use_classifier = classify_conversations
 
     records: List[Dict] = []
     for match in matches:
@@ -111,12 +110,22 @@ def parse_whatsapp_text(text_content: str) -> List[Dict]:
                 "media_files": media_files,
             })
 
-    # Apply grouped image logic: if a message has media but no text, and the previous
-    # message from the same sender had a description, apply that description to this group.
     _apply_grouped_image_descriptions(records)
-    
+
+    if use_classifier:
+        for rec in records:
+            result = _classify_snag(rec["message"])
+            rec["is_snag"] = result["is_snag"]
+            rec["confidence"] = round(result["score"], 3)
+            rec["classify_reason"] = result["reason"]
+
     logger.info("Parsed %d messages from WhatsApp export", len(records))
     return records
+
+
+def filter_snag_records(records: List[Dict]) -> List[Dict]:
+    """Drop conversational / non-snag records produced by ``parse_whatsapp_text``."""
+    return [r for r in records if r.get("is_snag", False)]
 
 
 def _apply_grouped_image_descriptions(records: List[Dict]) -> None:
